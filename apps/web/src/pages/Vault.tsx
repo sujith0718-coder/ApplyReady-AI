@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { Report } from '../types';
 import { PageHeader } from '../components/PageHeader';
 import { Card } from '../components/Card';
-import { Search, X, FileText, ShieldCheck, ShieldAlert, ShieldQuestion, Plus, Trash2, Upload as UploadIcon, Loader as Loader2 } from 'lucide-react';
+import { Search, X, FileText, ShieldCheck, ShieldAlert, ShieldQuestionMark as ShieldQuestion, Plus, Trash2, Upload as UploadIcon, Loader as Loader2 } from 'lucide-react';
 
 const VERIFIED_ICON = { verified: ShieldCheck, unverified: ShieldAlert, needs_review: ShieldQuestion } as const;
 

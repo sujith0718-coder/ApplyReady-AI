@@ -15,7 +15,8 @@ export function Vault({
   onResolve,
 }: {
   report: Report;
-  onUpload: (name: string, category: string) => Promise<void>;
+  // onUpload accepts optional File for multipart upload; progress callback reports 0-100
+  onUpload: (name: string, category: string, file?: File, onProgress?: (p: number) => void) => Promise<void>;
   onDeleteDoc: (id: string) => Promise<void>;
   onResolve: (id: string) => Promise<void>;
 }) {
@@ -105,8 +106,53 @@ export function Vault({
                 {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </label>
+
+            {/* File picker and preview */}
+            <div className="field-label">
+              <span>Choose file</span>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input id="file-input" type="file" accept=".pdf,image/jpeg,image/png" style={{ display: 'none' }} onChange={(e) => {
+                  const f = e.target.files ? e.target.files[0] : undefined;
+                  if (f) {
+                    setUploadName((n) => n || f.name);
+                    (window as any).selectedFile = f; // small local store
+                  }
+                }} />
+                <button className="btn" onClick={() => { const el = document.getElementById('file-input') as HTMLInputElement; el?.click(); }}><UploadIcon size={14} /> Choose file</button>
+                <span className="muted">{(window as any).selectedFile ? (window as any).selectedFile.name : 'No file selected'}</span>
+              </div>
+            </div>
+
             <p className="muted upload-modal-hint"><UploadIcon size={13} /> File upload connects to the document provider. Metadata is stored immediately.</p>
-            <button className="btn btn-primary" onClick={submitUpload} disabled={busy || !uploadName.trim()}>
+
+            {/** progress UI */}
+            {busy && (
+              <div style={{ marginTop: 8 }}>
+                <div className="progress" style={{ width: '100%', height: 8, background: '#f3f3f3', borderRadius: 4 }}>
+                  <div id="upload-progress" style={{ width: '0%', height: '100%', background: '#2563eb', borderRadius: 4 }} />
+                </div>
+              </div>
+            )}
+
+            <button className="btn btn-primary" onClick={async () => {
+              setBusy(true);
+              try {
+                const f: File | undefined = (window as any).selectedFile as File | undefined;
+                await onUpload(uploadName.trim(), uploadCat, f, (p) => {
+                  const el = document.getElementById('upload-progress');
+                  if (el) el.style.width = `${p}%`;
+                });
+                setShowModal(false);
+                setUploadName('');
+                (window as any).selectedFile = undefined;
+                if (uploadCat === 'Transcript') onResolve('transcript');
+              } catch (e) {
+                // pass error up; UI toast is handled by caller
+              } finally {
+                setBusy(false);
+                const el = document.getElementById('upload-progress'); if (el) el.style.width = '0%';
+              }
+            }} disabled={busy || !uploadName.trim()}>
               {busy ? <Loader2 size={15} className="spin" /> : <UploadIcon size={15} />}
               {busy ? 'Uploading…' : 'Add to vault'}
             </button>

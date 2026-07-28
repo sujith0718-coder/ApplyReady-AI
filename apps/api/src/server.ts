@@ -2,6 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import { z } from 'zod';
 import { normalizeNotice } from './domain.js';
+import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
 
 // In-memory demo datastore that mimics the Supabase tables used by the frontend.
 const DEMO_OPPORTUNITY_ID = 'a0000000-0000-0000-0000-000000000001';
@@ -31,7 +34,30 @@ let requirements: any[] = normalizeNotice(opportunities[0].notice_text).map((r, 
   created_at: new Date(Date.now() - i * 1000).toISOString(),
 }));
 
-let documents: any[] = [];
+let documents: any[] = []; 
+
+// Prepare uploads directory and multer
+const UPLOAD_DIR = path.join(process.cwd(), 'apps', 'api', 'uploads');
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req: any, _file: any, cb: any) => cb(null, UPLOAD_DIR),
+  filename: (_req: any, file: any, cb: any) => {
+    const ext = path.extname(file.originalname) || '';
+    const fname = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+    cb(null, fname);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+  fileFilter: (_req: any, file: any, cb: any) => {
+    const allowed = ['application/pdf', 'image/jpeg', 'image/png'];
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Invalid file type'));
+  },
+});
 
 const app = express();
 app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173' }));
@@ -64,7 +90,7 @@ let _dbReady = false;
           }
         }
       } catch (e: any) {
-        console.warn('Seeding skipped:', e?.message || e);
+        console.warn('Seeding skipped:', (e as any)?.message || e);
       }
     } else {
       console.log('Running in Demo Mode (In-Memory)');
@@ -196,7 +222,34 @@ app.get('/api/v1/opportunities/:id/documents', async (req, res) => {
   res.json(list);
 });
 
-app.post('/api/v1/opportunities/:id/documents', async (req, res) => {
+app.post('/api/v1/opportunities/:id/documents', upload.single('file'), async (req, res) => {
+  // If a file was uploaded via multipart form, handle file metadata + save
+  const anyReq: any = req as any;
+  if (anyReq.file) {
+    const file = anyReq.file as any;
+    const meta = {
+      opportunity_id: req.params.id,
+      name: req.body.name || file.originalname,
+      category: req.body.category || file.originalname || 'Unknown',
+      verification_status: req.body.verification_status || 'unverified',
+      extracted_text: req.body.extracted_text || 'Upload pending text extraction',
+      mime_type: file.mimetype,
+      size: file.size,
+      path: path.join('apps', 'api', 'uploads', file.filename),
+      uploaded_at: new Date().toISOString(),
+    };
+
+    if (_dbReady) {
+      const doc = await models.DocumentModel.create({ ...meta, opportunity_id: req.params.id });
+      return res.status(201).json(doc.toObject());
+    }
+
+    const doc = { id: genId(), ...meta };
+    documents.push(doc);
+    return res.status(201).json(doc);
+  }
+
+  // Fallback: support existing JSON API for backward compatibility
   const body = req.body;
   if (_dbReady) {
     const doc = await models.DocumentModel.create({ ...body, opportunity_id: req.params.id });
@@ -211,10 +264,29 @@ app.delete('/api/v1/documents/:id', async (req, res) => {
   if (_dbReady) {
     const r = await models.DocumentModel.findOneAndDelete({ $or: [{ id: req.params.id }, { _id: req.params.id }] }).lean().exec();
     if (!r) return res.status(404).json({ error: 'not_found' });
+    // attempt to remove stored file if present
+    try {
+      if (r.path) {
+        const fp = path.isAbsolute(r.path) ? r.path : path.join(process.cwd(), r.path);
+        if (fs.existsSync(fp)) fs.unlinkSync(fp);
+      }
+    } catch (e) {
+      console.warn('Failed to remove file:', (e as any)?.message || e);
+    }
     return res.status(204).end();
   }
   const idx = documents.findIndex((d) => d.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'not_found' });
+  // remove local file if present
+  try {
+    const doc = documents[idx];
+    if (doc.path) {
+      const fp = path.isAbsolute(doc.path) ? doc.path : path.join(process.cwd(), doc.path);
+      if (fs.existsSync(fp)) fs.unlinkSync(fp);
+    }
+  } catch (e) {
+    console.warn('Failed to remove demo file:', (e as any)?.message || e);
+  }
   documents.splice(idx, 1);
   res.status(204).end();
 });

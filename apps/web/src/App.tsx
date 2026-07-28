@@ -69,12 +69,13 @@ export function App() {
     }
   };
 
-  const handleUpload = async (name: string, category: string) => {
+  const handleUpload = async (name: string, category: string, file?: File, onProgress?: (p: number) => void) => {
     try {
-      await actions.uploadDocument(name, category);
+      await actions.uploadDocument(name, category, file, onProgress);
       setToast({ kind: 'success', message: `${name} added to evidence vault.` });
     } catch (e) {
       setToast({ kind: 'error', message: e instanceof Error ? e.message : 'Upload failed.' });
+      throw e;
     }
   };
 

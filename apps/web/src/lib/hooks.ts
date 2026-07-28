@@ -206,19 +206,54 @@ export function useActions(load: () => Promise<void>) {
     await load();
   }, [load]);
 
-  const uploadDocument = useCallback(async (name: string, category: string) => {
-    const r = await fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/documents`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
-        opportunity_id: DEMO_OPPORTUNITY_ID,
-        name,
-        category,
-        verification_status: 'unverified',
-        extracted_text: 'Upload pending text extraction',
-      }),
-    });
-    if (!r.ok) throw new Error((await r.text()) || r.statusText);
-    await load();
-  }, [load]);
+  const uploadDocument = useCallback(async (name: string, category: string, file?: File, onProgress?: (p: number) => void) => {
+      // If a file is provided, upload via multipart/form-data with progress
+      if (file) {
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          const fd = new FormData();
+          fd.append('file', file);
+          fd.append('name', name);
+          fd.append('category', category);
+          fd.append('verification_status', 'unverified');
+          fd.append('extracted_text', 'Upload pending text extraction');
+
+          xhr.open('POST', `${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/documents`);
+          xhr.onload = async () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try { await load(); } catch (_) {}
+              resolve();
+            } else {
+              reject(new Error(xhr.responseText || xhr.statusText));
+            }
+          };
+          xhr.onerror = () => reject(new Error('Upload failed'));
+          if (xhr.upload && onProgress) {
+            xhr.upload.onprogress = (ev) => {
+              if (ev.lengthComputable) {
+                const p = Math.round((ev.loaded / ev.total) * 100);
+                try { onProgress(p); } catch (_) {}
+              }
+            };
+          }
+          xhr.send(fd);
+        });
+        return;
+      }
+
+      // Fallback: previous JSON metadata-only behavior
+      const r = await fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/documents`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+          opportunity_id: DEMO_OPPORTUNITY_ID,
+          name,
+          category,
+          verification_status: 'unverified',
+          extracted_text: 'Upload pending text extraction',
+        }),
+      });
+      if (!r.ok) throw new Error((await r.text()) || r.statusText);
+      await load();
+    }, [load]);
 
   const deleteDocument = useCallback(async (id: string) => {
     const r = await fetch(`${API_BASE}/api/v1/documents/${encodeURIComponent(id)}`, { method: 'DELETE' });

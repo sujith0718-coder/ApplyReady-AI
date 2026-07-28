@@ -3,7 +3,7 @@ import { ScoreRing } from './ScoreRing';
 import type { Report } from '../types';
 import { CalendarClock } from 'lucide-react';
 
-export function ReadinessCard({ report, deadline }: { report: Report; deadline: string }) {
+export function ReadinessCard({ report, deadline }: { report: Report; deadline?: string }) {
   const completed = useMemo(() => report.requirements.filter((x) => x.status === 'completed').length, [report.requirements]);
   const pending = useMemo(() => report.requirements.filter((x) => x.status === 'pending').length, [report.requirements]);
   const blocked = useMemo(() => report.requirements.filter((x) => x.status === 'blocked').length, [report.requirements]);
@@ -27,7 +27,7 @@ export function ReadinessCard({ report, deadline }: { report: Report; deadline: 
             </div>
             <div>
               <small className="muted"><CalendarClock size={12} /> Deadline</small>
-              <div className="readiness-value">{new Date(deadline).toLocaleDateString()}</div>
+              <div className="readiness-value">{deadline && !isNaN(new Date(deadline).getTime()) ? new Date(deadline).toLocaleDateString() : 'Not detected'}</div>
             </div>
           </div>
           <div className="readiness-stats">

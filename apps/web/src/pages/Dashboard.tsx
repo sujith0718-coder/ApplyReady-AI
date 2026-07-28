@@ -41,7 +41,7 @@ export function Dashboard({
       <PageHeader
         eyebrow="Application workspace"
         title={opportunityTitle}
-        sub={`Closes ${new Date(deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })} · ${days} days remaining`}
+        sub={deadline && !isNaN(new Date(deadline).getTime()) ? `Closes ${new Date(deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })} · ${days} days remaining` : 'Deadline: Not detected'}
         actions={<button className="btn btn-ghost" onClick={() => onNavigate('readiness')}><TrendingUp size={15} />View full report</button>}
       />
 

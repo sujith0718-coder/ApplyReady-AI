@@ -1,0 +1,12 @@
+{
+  "name": "applyready-ai",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w @applyready/api\" \"npm run dev -w @applyready/web\"",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "typecheck": "npm run typecheck --workspaces"
+  },
+  "devDependencies": { "concurrently": "^9.1.2" }
+}

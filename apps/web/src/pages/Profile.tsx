@@ -24,7 +24,13 @@ export function ProfilePage({
 }) {
   const [draft, setDraft] = useState<Profile>(profile);
   const [saving, setSaving] = useState(false);
-  const filled = Object.values(draft).filter((v) => v.trim().length > 0).length;
+  const filled = Object.values(draft).filter((v) => {
+  if (typeof v === "string") return v.trim().length > 0;
+
+  if (Array.isArray(v)) return v.length > 0;
+
+  return v !== null && v !== undefined && String(v).trim().length > 0;
+}).length;
   const completeness = Math.round((filled / FIELDS.length) * 100);
 
   const save = async () => {
@@ -42,7 +48,22 @@ export function ProfilePage({
           {FIELDS.map(({ key, label, icon: Icon }) => (
             <label key={key} className="field-label">
               <span><Icon size={15} /> {label}</span>
-              <input value={draft[key]} onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} />
+              <input
+  value={String(draft[key] ?? "")}
+  onChange={(e) => {
+    const value = e.target.value;
+
+    setDraft({
+      ...draft,
+      [key]:
+        key === "cgpa"
+          ? Number(value)
+          : key === "year"
+          ? Number(value)
+          : value,
+    });
+  }}
+/>
             </label>
           ))}
           <button className="btn btn-primary" onClick={save} disabled={saving}>
@@ -58,7 +79,7 @@ export function ProfilePage({
           <div className="meter"><i style={{ width: `${completeness}%` }} /></div>
           <p className="muted">{filled} of {FIELDS.length} fields completed.</p>
           <ul className="profile-checklist">
-            <li>Profile data persisted to Supabase</li>
+            <li>Profile stored in MongoDB (or Demo Mode)</li>
             <li>Used for eligibility and CGPA matching</li>
             <li>Contradictions flagged automatically</li>
           </ul>

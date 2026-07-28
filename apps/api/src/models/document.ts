@@ -19,6 +19,7 @@ const DocumentSchema = new mongoose.Schema<any>({
   category: { type: String },
   verification_status: { type: String, enum: ['verified','unverified','needs_review'] },
   extracted_text: { type: String },
+  extracted_confidence: { type: Number },
   mime_type: { type: String },
   size: { type: Number },
   path: { type: String },

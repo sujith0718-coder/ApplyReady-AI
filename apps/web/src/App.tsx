@@ -15,8 +15,8 @@ import { ProfilePage } from './pages/Profile';
 import { Settings } from './pages/Settings';
 
 export function App() {
-  const { state, load } = useAppData();
-  const actions = useActions(load);
+  const { state, load, setActiveOpportunity, createOpportunityFromText } = useAppData();
+  const actions = useActions(() => state.opportunity?.id ?? null, load);
   const [page, setPage] = useState('dashboard');
   const [toast, setToast] = useState<ToastState | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
@@ -44,7 +44,10 @@ export function App() {
 
   const handleExtract = async (text: string) => {
     try {
-      await actions.extractRequirements(text);
+      // Create a new opportunity from the pasted text and navigate to requirements
+      const created = await createOpportunityFromText(text);
+      setToast({ kind: 'success', message: 'Opportunity created and requirements extracted.' });
+      setPage('requirements');
       return true;
     } catch (e) {
       setToast({ kind: 'error', message: e instanceof Error ? e.message : 'Extraction failed.' });
@@ -130,7 +133,7 @@ export function App() {
         </button>
         <div className="main-inner">
           {toast && <Toast toast={toast} onClose={() => setToast(null)} />}
-          {page === 'dashboard' && <Dashboard report={report} profile={profile} opportunityTitle={title} deadline={deadline} onResolve={handleResolve} onNavigate={navigate} />}
+          {page === 'dashboard' && <Dashboard report={report} profile={profile} opportunityTitle={title} deadline={deadline} onResolve={handleResolve} onNavigate={navigate} opportunities={state.opportunities} onSelectOpportunity={async (id:string) => { await setActiveOpportunity(id); }} />}
           {page === 'upload' && <Upload onExtract={handleExtract} setToast={setToast} onNavigate={navigate} />}
           {page === 'requirements' && <Requirements report={report} onResolve={handleResolve} />}
           {page === 'vault' && <Vault report={report} onUpload={handleUpload} onDeleteDoc={handleDeleteDoc} onResolve={handleResolve} />}

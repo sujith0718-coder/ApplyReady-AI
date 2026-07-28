@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback } from 'react';
-import { DEMO_OPPORTUNITY_ID } from './supabase';
 import type { Profile, Requirement, Document } from '../types';
 import { buildReport, normalizeNotice } from './engine';
 
@@ -23,7 +22,8 @@ export interface Opportunity {
 
 export interface AppState {
   profile: Profile | null;
-  opportunity: Opportunity | null;
+  opportunity: Opportunity | null; // active opportunity
+  opportunities: Opportunity[];
   requirements: Requirement[];
   documents: Document[];
   loading: boolean;
@@ -34,41 +34,62 @@ export function useAppData() {
   const [state, setState] = useState<AppState>({
     profile: null,
     opportunity: null,
+    opportunities: [],
     requirements: [],
     documents: [],
     loading: true,
     error: '',
   });
 
-  const load = useCallback(async () => {
+  const setActive = useCallback(async (id: string | null) => {
     setState((s) => ({ ...s, loading: true, error: '' }));
     try {
-      const [profRes, oppRes, reqRes, docRes] = await Promise.all([
-        fetch(`${API_BASE}/api/v1/profiles`),
-        fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}`),
-        fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/requirements`),
-        fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/documents`),
+      // fetch details for active opportunity
+      const [reqRes, docRes] = await Promise.all([
+        id ? fetch(`${API_BASE}/api/v1/opportunities/${encodeURIComponent(id)}/requirements`) : Promise.resolve(new Response('[]', { status: 200 })),
+        id ? fetch(`${API_BASE}/api/v1/opportunities/${encodeURIComponent(id)}/documents`) : Promise.resolve(new Response('[]', { status: 200 })),
       ]);
+      const [reqJson, docJson] = await Promise.all([getJsonOrThrow(reqRes), getJsonOrThrow(docRes)]);
 
-      const [profJson, oppJson, reqJson, docJson] = await Promise.all([
-        getJsonOrThrow(profRes),
-        getJsonOrThrow(oppRes),
-        getJsonOrThrow(reqRes),
-        getJsonOrThrow(docRes),
-      ]);
-
-      const profData = Array.isArray(profJson) ? profJson[0] ?? null : profJson || null;
-
-      setState({
-        profile: profData
-          ? { name: profData.name, degree: profData.degree, year: profData.year, cgpa: profData.cgpa, skills: profData.skills }
-          : null,
-        opportunity: oppJson || null,
+      setState((s) => ({
+        ...s,
+        opportunity: id ? s.opportunities.find((o) => o.id === id) ?? null : null,
         requirements: (reqJson ?? []).map(rowToRequirement),
         documents: (docJson ?? []).map(rowToDocument),
         loading: false,
         error: '',
-      });
+      }));
+    } catch (e) {
+      setState((s) => ({ ...s, loading: false, error: e instanceof Error ? e.message : 'Failed to load data' }));
+    }
+  }, []);
+
+  const load = useCallback(async () => {
+    setState((s) => ({ ...s, loading: true, error: '' }));
+    try {
+      const [profRes, oppsRes] = await Promise.all([
+        fetch(`${API_BASE}/api/v1/profiles`),
+        fetch(`${API_BASE}/api/v1/opportunities`),
+      ]);
+
+      const [profJson, oppsJson] = await Promise.all([getJsonOrThrow(profRes), getJsonOrThrow(oppsRes)]);
+      const profData = Array.isArray(profJson) ? profJson[0] ?? null : profJson || null;
+      const opps: Opportunity[] = Array.isArray(oppsJson) ? oppsJson : (oppsJson ? [oppsJson] : []);
+
+      // choose active: keep previous if present else first
+      const prevId = state.opportunity?.id ?? null;
+      const activeId = prevId && opps.some((o) => o.id === prevId) ? prevId : (opps[0]?.id ?? null);
+
+      setState((s) => ({
+        ...s,
+        profile: profData ? { name: profData.name, degree: profData.degree, year: profData.year, cgpa: profData.cgpa, skills: profData.skills } : null,
+        opportunities: opps,
+        loading: true,
+        error: '',
+      }));
+
+      // load active details
+      await setActive(activeId);
     } catch (e) {
       setState((s) => ({
         ...s,
@@ -76,13 +97,25 @@ export function useAppData() {
         error: e instanceof Error ? e.message : 'Failed to load data',
       }));
     }
-  }, []);
+  }, [setActive, state.opportunity]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  return { state, load };
+  const createOpportunityFromText = useCallback(async (text: string, opts?: { title?: string; deadline?: string }) => {
+    const title = opts?.title || (text || '').slice(0, 80);
+    const deadline = opts?.deadline || null;
+    const res = await fetch(`${API_BASE}/api/v1/opportunities`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title, deadline, notice_text: text }) });
+    if (!res.ok) throw new Error((await res.text()) || res.statusText);
+    const created = await res.json();
+    // reload list and set active to created.id
+    await load();
+    await setActive(created.id);
+    return created;
+  }, [load, setActive]);
+
+  return { state, load, setActiveOpportunity: setActive, createOpportunityFromText };
 }
 
 function rowToRequirement(row: any): Requirement {
@@ -110,21 +143,24 @@ function rowToDocument(row: any): Document {
   };
 }
 
-export function useActions(load: () => Promise<void>) {
+export function useActions(getActiveId: () => string | null, load: () => Promise<void>) {
   const resolveRequirement = useCallback(async (reqKey: string) => {
-    const res = await fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/requirements/${encodeURIComponent(reqKey)}`, {
+    const id = getActiveId();
+    if (!id) throw new Error('No active opportunity selected');
+    const res = await fetch(`${API_BASE}/api/v1/opportunities/${encodeURIComponent(id)}/requirements/${encodeURIComponent(reqKey)}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ status: 'completed' }),
     });
     if (!res.ok) throw new Error((await res.text()) || res.statusText);
 
+    // Convenience demo helpers: auto-add documents for common demo keys
     if (reqKey === 'transcript') {
-      await fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/documents`, {
+      await fetch(`${API_BASE}/api/v1/opportunities/${encodeURIComponent(id)}/documents`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          opportunity_id: DEMO_OPPORTUNITY_ID,
+          opportunity_id: id,
           name: 'Official_Transcript.pdf',
           category: 'Transcript',
           verification_status: 'needs_review',
@@ -133,11 +169,11 @@ export function useActions(load: () => Promise<void>) {
       });
     }
     if (reqKey === 'endorsement') {
-      await fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/documents`, {
+      await fetch(`${API_BASE}/api/v1/opportunities/${encodeURIComponent(id)}/documents`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          opportunity_id: DEMO_OPPORTUNITY_ID,
+          opportunity_id: id,
           name: 'Institute_Endorsement.pdf',
           category: 'Endorsement',
           verification_status: 'verified',
@@ -146,15 +182,19 @@ export function useActions(load: () => Promise<void>) {
       });
     }
     await load();
-  }, [load]);
+  }, [getActiveId, load]);
 
   const resetDemo = useCallback(async () => {
-    const res = await fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/reset-demo`, { method: 'POST' });
+    const id = getActiveId();
+    if (!id) throw new Error('No active opportunity');
+    const res = await fetch(`${API_BASE}/api/v1/opportunities/${encodeURIComponent(id)}/reset-demo`, { method: 'POST' });
     if (!res.ok) throw new Error((await res.text()) || res.statusText);
     await load();
-  }, [load]);
+  }, [getActiveId, load]);
 
   const extractRequirements = useCallback(async (text: string): Promise<Requirement[]> => {
+    const id = getActiveId();
+    if (!id) throw new Error('No active opportunity');
     // Server can compute normalized requirements; fallback to local normalization if needed.
     const extractRes = await fetch(`${API_BASE}/api/v1/opportunities/extract`, {
       method: 'POST',
@@ -165,11 +205,11 @@ export function useActions(load: () => Promise<void>) {
     const reqs = extractJson.requirements ?? extractJson;
 
     // replace stored requirements
-    const delRes = await fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/requirements`, { method: 'DELETE' });
+    const delRes = await fetch(`${API_BASE}/api/v1/opportunities/${encodeURIComponent(id)}/requirements`, { method: 'DELETE' });
     if (!delRes.ok) throw new Error((await delRes.text()) || delRes.statusText);
 
     const rows = reqs.map((r: any) => ({
-      opportunity_id: DEMO_OPPORTUNITY_ID,
+      opportunity_id: id,
       req_key: r.id,
       title: r.title,
       description: r.description,
@@ -181,7 +221,7 @@ export function useActions(load: () => Promise<void>) {
       dependencies: r.dependencies,
     }));
 
-    const insRes = await fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/requirements`, {
+    const insRes = await fetch(`${API_BASE}/api/v1/opportunities/${encodeURIComponent(id)}/requirements`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(rows),
@@ -190,7 +230,7 @@ export function useActions(load: () => Promise<void>) {
 
     await load();
     return reqs;
-  }, [load]);
+  }, [getActiveId, load]);
 
   const saveProfile = useCallback(async (profile: Profile) => {
     const res = await fetch(`${API_BASE}/api/v1/profiles`);
@@ -207,6 +247,8 @@ export function useActions(load: () => Promise<void>) {
   }, [load]);
 
   const uploadDocument = useCallback(async (name: string, category: string, file?: File, onProgress?: (p: number) => void) => {
+      const id = getActiveId();
+      if (!id) throw new Error('No active opportunity');
       // If a file is provided, upload via multipart/form-data with progress
       if (file) {
         await new Promise<void>((resolve, reject) => {
@@ -218,7 +260,7 @@ export function useActions(load: () => Promise<void>) {
           fd.append('verification_status', 'unverified');
           fd.append('extracted_text', 'Upload pending text extraction');
 
-          xhr.open('POST', `${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/documents`);
+          xhr.open('POST', `${API_BASE}/api/v1/opportunities/${encodeURIComponent(id)}/documents`);
           xhr.onload = async () => {
             if (xhr.status >= 200 && xhr.status < 300) {
               try { await load(); } catch (_) {}
@@ -242,9 +284,9 @@ export function useActions(load: () => Promise<void>) {
       }
 
       // Fallback: previous JSON metadata-only behavior
-      const r = await fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/documents`, {
+      const r = await fetch(`${API_BASE}/api/v1/opportunities/${encodeURIComponent(id)}/documents`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
-          opportunity_id: DEMO_OPPORTUNITY_ID,
+          opportunity_id: id,
           name,
           category,
           verification_status: 'unverified',
@@ -253,10 +295,10 @@ export function useActions(load: () => Promise<void>) {
       });
       if (!r.ok) throw new Error((await r.text()) || r.statusText);
       await load();
-    }, [load]);
+    }, [getActiveId, load]);
 
-  const deleteDocument = useCallback(async (id: string) => {
-    const r = await fetch(`${API_BASE}/api/v1/documents/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const deleteDocument = useCallback(async (idArg: string) => {
+    const r = await fetch(`${API_BASE}/api/v1/documents/${encodeURIComponent(idArg)}`, { method: 'DELETE' });
     if (!r.ok) throw new Error((await r.text()) || r.statusText);
     await load();
   }, [load]);

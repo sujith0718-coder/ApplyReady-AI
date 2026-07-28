@@ -5,6 +5,10 @@ import { Card, SectionTitle } from '../components/Card';
 import { StatusBadge } from '../components/Badges';
 import { daysUntilDeadline } from '../lib/engine';
 import { ArrowRight, CalendarClock, TrendingUp, TriangleAlert as AlertTriangle, ShieldCheck, FileCheck as FileCheck2, Ban, Activity } from 'lucide-react';
+import { ReadinessCard } from '../components/ReadinessCard';
+import { OpportunityCard } from '../components/OpportunityCard';
+import { MetricCard } from '../components/Metrics';
+import React, { useMemo } from 'react';
 
 export function Dashboard({
   report,
@@ -38,27 +42,23 @@ export function Dashboard({
       />
 
       <section className="hero-grid">
-        <Card className="hero-score">
-          <p className="eyebrow">Readiness score</p>
-          <ScoreRing value={report.readiness} />
-          <p className="hero-score-sub">{completed} of {report.requirements.length} verified</p>
-        </Card>
+        <ReadinessCard report={report} deadline={deadline} />
 
         <Card className={`hero-risk ${riskTone}`}>
           <div className="hero-risk-head">
             <AlertTriangle size={18} />
-            <b>{report.risk} deadline risk</b>
+            <b className="cap">{report.risk} deadline risk</b>
           </div>
-          <p>{report.riskReasons.join(' ')}</p>
+          <p className="muted">{report.riskReasons.join(' ')}</p>
           <div className="risk-meter">
-            <i style={{ width: `${report.readiness}%` }} />
+            <i style={{ width: `${100 - report.readiness}%` }} />
           </div>
         </Card>
 
         <Card className="hero-action">
           <p className="eyebrow">Next best action</p>
           <b className="hero-action-title">{action?.action || 'Ready to submit'}</b>
-          <p>{action?.reason}</p>
+          <p className="muted">{action?.reason}</p>
           {action && (
             <button className="btn btn-primary" onClick={() => {
               const target = report.requirements.find((r) => action.action.toLowerCase().includes(r.id.toLowerCase()) || action.action.toLowerCase().includes(r.title.toLowerCase()));
@@ -71,10 +71,10 @@ export function Dashboard({
       </section>
 
       <section className="metric-row">
-        <Card className="metric"><FileCheck2 size={18} /><b>{completed}</b><span>Completed</span></Card>
-        <Card className="metric"><AlertTriangle size={18} /><b>{missing}</b><span>Missing documents</span></Card>
-        <Card className="metric"><Ban size={18} /><b>{report.blockers.length}</b><span>Critical blockers</span></Card>
-        <Card className="metric"><CalendarClock size={18} /><b>{days}</b><span>Days remaining</span></Card>
+        <MetricCard icon={<FileCheck2 size={20} />} value={<span>{completed}</span>} label="Completed" />
+        <MetricCard icon={<AlertTriangle size={20} />} value={<span>{missing}</span>} label="Missing" />
+        <MetricCard icon={<Ban size={20} />} value={<span>{report.blockers.length}</span>} label="Blockers" />
+        <MetricCard icon={<CalendarClock size={20} />} value={<span>{days}d</span>} label="Deadline" />
       </section>
 
       <section className="two-col">
@@ -82,11 +82,11 @@ export function Dashboard({
           <SectionTitle hint={`${report.requirements.length} steps`}>Opportunity timeline</SectionTitle>
           <ul className="timeline">
             {report.requirements.map((x) => (
-              <li key={x.id} className="timeline-item">
+              <li key={x.id} className="timeline-item" tabIndex={0}>
                 <span className={`dot dot-${x.status}`} />
                 <div className="timeline-text">
                   <b>{x.title}</b>
-                  <p>{x.type} · {Math.round(x.confidence * 100)}% confidence</p>
+                  <p className="muted">{x.type} · {Math.round(x.confidence * 100)}% confidence</p>
                 </div>
                 <StatusBadge status={x.status} />
               </li>
@@ -127,10 +127,17 @@ export function Dashboard({
             <Activity size={16} />
             <div>
               <b>Latest activity</b>
-              <p>{report.requirements.filter((r) => r.status === 'completed').length} requirements completed, {report.requirements.length - completed} remaining.</p>
+              <p className="muted">{report.requirements.filter((r) => r.status === 'completed').length} requirements completed, {report.requirements.length - completed} remaining.</p>
             </div>
           </div>
         </Card>
+      </section>
+
+      <section style={{ marginTop: 20 }}>
+        <SectionTitle>Other opportunities</SectionTitle>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+          <OpportunityCard title={opportunityTitle} organization="Demo Org" deadline={deadline} readiness={report.readiness} risk={report.risk} onAction={() => onNavigate('readiness')} />
+        </div>
       </section>
     </>
   );

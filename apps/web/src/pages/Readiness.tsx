@@ -12,9 +12,11 @@ type ScoreComponent = { name: string; weight: number; earned: number; reason: st
 export function Readiness({
   report,
   onResolve,
+  setToast,
 }: {
   report: Report;
   onResolve: (id: string) => void;
+  setToast?: (t: { kind: 'info' | 'success' | 'error'; message: string }) => void;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -231,7 +233,17 @@ export function Readiness({
                 <div className="tag-neutral">Priority: {recommendation.priority}</div>
               </div>
             </div>
-            <button className="btn btn-primary" onClick={() => { if (recommendation.dependencies && recommendation.dependencies.length) alert('Follow dependencies: ' + recommendation.dependencies.join(' -> ')); }}>{recommendation.priority === 'High' ? 'Resolve now' : 'Plan'}</button>
+            <button className="btn btn-primary" onClick={() => {
+                if (recommendation.priority === 'High') {
+                  // attempt to resolve top pending requirement if available
+                  const topPending = report.requirements.find((r) => r.status !== 'completed');
+                  if (topPending) onResolve(topPending.id);
+                  else if (setToast) setToast({ kind: 'info', message: 'No actionable item found to resolve.' });
+                } else {
+                  // Planning feature not yet implemented — inform user
+                  if (setToast) setToast({ kind: 'info', message: 'Planning feature coming soon.' });
+                }
+              }}>{recommendation.priority === 'High' ? 'Resolve now' : 'Plan'}</button>
           </div>
         </Card>
 

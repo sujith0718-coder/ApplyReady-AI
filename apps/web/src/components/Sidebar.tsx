@@ -37,6 +37,9 @@ export function Sidebar({
   onToggleDark: () => void;
 }) {
   const initials = profile.name.split(' ').map((s) => s[0]).join('').slice(0, 2).toUpperCase();
+  // Read avatar from localStorage (profile picture stored on the client for now)
+  const avatar = typeof window !== 'undefined' ? localStorage.getItem('profile_avatar') : null;
+
   return (
     <>
       {mobileOpen && <div className="scrim" onClick={onCloseMobile} aria-hidden="true" />}
@@ -78,13 +81,13 @@ export function Sidebar({
           {dark ? 'Light mode' : 'Dark mode'}
         </button>
 
-        <div className="sidebar-profile">
-          <div className="avatar">{initials}</div>
+        <button className="sidebar-profile" onClick={() => onNavigate('profile')} aria-label="Open profile">
+          <div className="avatar">{avatar ? <img src={avatar} alt="Profile" /> : initials}</div>
           <div className="sidebar-profile-text">
             <b>{profile.name}</b>
             <small>{profile.degree} · Year {profile.year}</small>
           </div>
-        </div>
+        </button>
 
         <button className="sidebar-close" onClick={onCloseMobile} aria-label="Close navigation">
           <X size={18} />

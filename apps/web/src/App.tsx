@@ -133,11 +133,11 @@ export function App() {
         </button>
         <div className="main-inner">
           {toast && <Toast toast={toast} onClose={() => setToast(null)} />}
-          {page === 'dashboard' && <Dashboard report={report} profile={profile} opportunityTitle={title} deadline={deadline} onResolve={handleResolve} onNavigate={navigate} opportunities={state.opportunities} onSelectOpportunity={async (id:string) => { await setActiveOpportunity(id); }} />}
+          {page === 'dashboard' && <Dashboard report={report} profile={profile} opportunityTitle={title} deadline={deadline} onResolve={handleResolve} onNavigate={navigate} opportunities={state.opportunities} onSelectOpportunity={async (id:string) => { await setActiveOpportunity(id); }} activeId={state.opportunity?.id} />}
           {page === 'upload' && <Upload onExtract={handleExtract} setToast={setToast} onNavigate={navigate} />}
           {page === 'requirements' && <Requirements report={report} onResolve={handleResolve} />}
           {page === 'vault' && <Vault report={report} onUpload={handleUpload} onDeleteDoc={handleDeleteDoc} onResolve={handleResolve} />}
-          {page === 'readiness' && <Readiness report={report} onResolve={handleResolve} />}
+          {page === 'readiness' && <Readiness report={report} onResolve={handleResolve} setToast={setToast} />}
           {page === 'profile' && <ProfilePage profile={profile} onSave={handleSaveProfile} setToast={setToast} />}
           {page === 'settings' && <Settings setToast={setToast} dark={dark} onToggleDark={() => setDark(!dark)} />}
         </div>

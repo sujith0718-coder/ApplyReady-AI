@@ -23,8 +23,8 @@ export function App() {
   const [dark, setDark] = useState(false);
 
   const profile: Profile = state.profile ?? { name: 'Aarav Kumar', degree: 'B.Tech Computer Science', year: '3', cgpa: '8.6', skills: 'React, Python, Figma' };
-  const deadline = state.opportunity?.deadline ?? '2026-08-15';
-  const title = state.opportunity?.title ?? 'National Student Innovation Hackathon';
+  const deadline = state.opportunity?.deadline ?? '';
+  const title = state.opportunity?.title && state.opportunity.title.trim().length > 0 ? state.opportunity.title : 'Untitled Opportunity';
 
   const report = useMemo(
     () => buildReport(state.requirements, state.documents, profile, deadline),

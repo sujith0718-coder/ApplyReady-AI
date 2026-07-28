@@ -109,7 +109,7 @@ export function buildReport(
   requirements: Requirement[],
   documents: Document[],
   profile: Profile,
-  deadline: string,
+  deadline?: string,
 ): Report {
   const readiness = computeReadiness(requirements);
   const risk = computeRisk(requirements);
@@ -118,14 +118,16 @@ export function buildReport(
   const contradictions = computeContradictions(documents, profile);
   const recommendations = computeRecommendations(requirements);
 
-  const daysLeft = Math.ceil(
-    (new Date(deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
-  );
+  const hasDeadline = !!deadline && !isNaN(new Date(deadline).getTime());
+  const daysLeft = hasDeadline ? Math.ceil((new Date(deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
 
-  const riskReasons: string[] = [
-    `${daysLeft} days remain before the application closes.`,
-    ...blockers.map((b) => `${b.title} has ${b.chain.length} approval steps blocking it.`),
-  ];
+  const riskReasons: string[] = [];
+  if (hasDeadline && daysLeft !== null) {
+    riskReasons.push(`${daysLeft} days remain before the application closes.`);
+  } else {
+    riskReasons.push('Deadline not detected for this opportunity.');
+  }
+  riskReasons.push(...blockers.map((b) => `${b.title} has ${b.chain.length} approval steps blocking it.`));
 
   return {
     readiness,
@@ -141,14 +143,51 @@ export function buildReport(
 }
 
 export function normalizeNotice(text: string): Requirement[] {
-  const source = text.slice(0, 160) || 'Submitted opportunity notice';
-  return [
-    { id: 'eligibility', title: 'Student eligibility', description: 'Must be a currently enrolled undergraduate student.', type: 'eligibility', priority: 'critical', status: 'completed', sourceText: source, confidence: 0.96, dependencies: [] },
-    { id: 'transcript', title: 'Official transcript', description: 'Upload latest official academic transcript.', type: 'document', priority: 'critical', status: 'missing', sourceText: source, confidence: 0.98, dependencies: [] },
-    { id: 'endorsement', title: 'Institute endorsement', description: 'Signed and sealed institute endorsement is mandatory.', type: 'approval', priority: 'critical', status: 'blocked', sourceText: source, confidence: 0.95, dependencies: ['Tutor approval', 'HOD approval', 'Principal signature', 'Institutional seal'] },
-    { id: 'resume', title: 'Resume', description: 'Upload a current one-page resume.', type: 'document', priority: 'high', status: 'completed', sourceText: source, confidence: 0.94, dependencies: [] },
-    { id: 'submission', title: 'Submit application', description: 'Complete final submission before deadline.', type: 'submission', priority: 'high', status: 'pending', sourceText: source, confidence: 0.91, dependencies: ['Official transcript', 'Institute endorsement'] },
-  ];
+  const trimmed = (text || '').trim();
+  if (!trimmed || trimmed.length < 20) return [];
+
+  const paragraphs = trimmed.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  const sentences: string[] = [];
+  paragraphs.forEach((p) => {
+    const s = p.match(/[^.!?]+[.!?]?/g) || [p];
+    s.forEach((ss) => sentences.push(ss.trim()));
+  });
+
+  const found: { id: string; title: string; type: string; priority: any; sentence: string; paragraph: string; confidence: number }[] = [];
+
+  const pushIfNotExists = (id: string, title: string, type: string, priority: any, sentence: string, paragraph: string, confidence: number) => {
+    if (!found.some((f) => f.id === id)) found.push({ id, title, type, priority, sentence, paragraph, confidence });
+  };
+
+  sentences.forEach((s, idx) => {
+    const lower = s.toLowerCase();
+    const para = paragraphs.find((p) => p.includes(s)) || '';
+
+    if (/resume|cv\b/.test(lower)) pushIfNotExists('resume', 'Resume', 'document', 'high', s, para, 0.9);
+    if (/cover letter/.test(lower)) pushIfNotExists('cover_letter', 'Cover Letter', 'document', 'high', s, para, 0.9);
+    if (/transcript|marksheet|mark sheet|academic transcript/.test(lower)) pushIfNotExists('transcript', 'Official transcript', 'document', 'critical', s, para, 0.95);
+    if (/endorse|endorsement|signed by|institute endorsement|principal signature|institutional seal/.test(lower)) pushIfNotExists('endorsement', 'Institute endorsement', 'approval', 'critical', s, para, 0.9);
+    if (/submit (your )?application|submission deadline|submit by|last date to submit|apply by/.test(lower)) pushIfNotExists('submission', 'Submit application', 'submission', 'high', s, para, 0.85);
+    if (/cgpa|gpa|grade point/.test(lower)) pushIfNotExists('eligibility', 'Eligibility (CGPA)', 'eligibility', 'critical', s, para, 0.8);
+    if (/bonafide|bonafide certificate/.test(lower)) pushIfNotExists('bonafide', 'Bonafide certificate', 'document', 'high', s, para, 0.85);
+    if (/photograph|passport photo|photo/.test(lower)) pushIfNotExists('photo', 'Photograph', 'document', 'low', s, para, 0.7);
+    if (/recommendation|reference letter/.test(lower)) pushIfNotExists('recommendation', 'Recommendation letter', 'document', 'high', s, para, 0.85);
+  });
+
+  // Map found to Requirement[]
+  const reqs: Requirement[] = found.map((f) => ({
+    id: f.id,
+    title: f.title,
+    description: f.sentence,
+    type: f.type,
+    priority: f.priority as any,
+    status: f.type === 'document' ? 'missing' : 'pending',
+    sourceText: `${f.sentence} — ${f.paragraph}`,
+    confidence: f.confidence,
+    dependencies: [],
+  }));
+
+  return reqs;
 }
 
 export function daysUntilDeadline(deadline: string): number {

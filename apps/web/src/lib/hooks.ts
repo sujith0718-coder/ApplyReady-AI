@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import type { Profile, Requirement, Document } from '../types';
 import { buildReport, normalizeNotice } from './engine';
 
@@ -41,7 +41,14 @@ export function useAppData() {
     error: '',
   });
 
+  // Keep a stable ref for the currently active id to avoid reading state in callbacks that
+  // would otherwise change identity and cause effects to retrigger.
+  const activeIdRef = useRef<string | null>(null);
+
   const setActive = useCallback(async (id: string | null) => {
+    // update ref immediately so other code reads the intended active id
+    activeIdRef.current = id;
+
     setState((s) => ({ ...s, loading: true, error: '' }));
     try {
       // fetch details for active opportunity
@@ -77,7 +84,7 @@ export function useAppData() {
       const opps: Opportunity[] = Array.isArray(oppsJson) ? oppsJson : (oppsJson ? [oppsJson] : []);
 
       // choose active: keep previous if present else first
-      const prevId = state.opportunity?.id ?? null;
+      const prevId = activeIdRef.current;
       const activeId = prevId && opps.some((o) => o.id === prevId) ? prevId : (opps[0]?.id ?? null);
 
       setState((s) => ({
@@ -88,7 +95,8 @@ export function useAppData() {
         error: '',
       }));
 
-      // load active details
+      // store chosen active id and load its details
+      activeIdRef.current = activeId;
       await setActive(activeId);
     } catch (e) {
       setState((s) => ({
@@ -97,7 +105,7 @@ export function useAppData() {
         error: e instanceof Error ? e.message : 'Failed to load data',
       }));
     }
-  }, [setActive, state.opportunity]);
+  }, [setActive]);
 
   useEffect(() => {
     load();

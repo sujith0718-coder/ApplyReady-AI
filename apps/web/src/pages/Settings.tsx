@@ -42,10 +42,10 @@ export function Settings({
 
         <Card>
           <div className="settings-head"><Database size={18} /><h2>Database</h2></div>
-          <p className="muted">Data persists to Supabase. Changes survive refresh.</p>
+          <p className="muted">Data persists via MongoDB and Mongoose through the Express REST API.</p>
           <div className="settings-list">
-            <li><Check size={14} /> PostgreSQL via Supabase</li>
-            <li><Check size={14} /> Row-level security enabled</li>
+            <li><Check size={14} /> MongoDB + Mongoose (recommended)</li>
+            <li><Check size={14} /> Express REST API endpoints</li>
             <li><Check size={14} /> Profiles, opportunities, requirements, documents</li>
           </div>
         </Card>

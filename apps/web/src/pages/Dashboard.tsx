@@ -19,6 +19,7 @@ export function Dashboard({
   onNavigate,
   opportunities,
   onSelectOpportunity,
+  activeId,
 }: {
   report: Report;
   profile: Profile;
@@ -28,6 +29,7 @@ export function Dashboard({
   onNavigate: (key: string) => void;
   opportunities: { id: string; title: string; deadline?: string; notice_text?: string }[];
   onSelectOpportunity: (id: string) => void;
+  activeId?: string | null;
 }) {
   const completed = report.requirements.filter((x) => x.status === 'completed').length;
   const missing = report.requirements.filter((x) => x.status === 'missing').length;
@@ -143,10 +145,12 @@ export function Dashboard({
           {opportunities.map((o) => (
             <OpportunityCard
               key={o.id}
-              title={o.title}
+              id={o.id}
+              activeId={activeId ?? null}
+              title={o.title || 'Untitled Opportunity'}
               organization=""
               deadline={o.deadline || ''}
-              readiness={o.id === (opportunityTitle ? undefined : undefined) ? report.readiness : 0}
+              readiness={o.id === activeId ? report.readiness : 0}
               risk={report.risk}
               onAction={() => { onSelectOpportunity(o.id); onNavigate('readiness'); }}
             />

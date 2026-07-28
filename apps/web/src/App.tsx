@@ -1,9 +1,11 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Menu, Loader as Loader2, CircleAlert as AlertCircle } from 'lucide-react';
-import type { Report, Profile } from './types';
-import * as api from './api';
+import { useMemo, useState } from 'react';
+import { Menu, Loader as Loader2, CircleAlert as AlertCircle, Moon, Sun } from 'lucide-react';
+import type { Profile } from './types';
+import { useAppData, useActions } from './lib/hooks';
+import { buildReport } from './lib/engine';
 import { Sidebar } from './components/Sidebar';
 import { Toast, type ToastState } from './components/Toast';
+import { Skeleton } from './components/Skeleton';
 import { Dashboard } from './pages/Dashboard';
 import { Upload } from './pages/Upload';
 import { Requirements } from './pages/Requirements';
@@ -13,83 +15,113 @@ import { ProfilePage } from './pages/Profile';
 import { Settings } from './pages/Settings';
 
 export function App() {
+  const { state, load } = useAppData();
+  const actions = useActions(load);
   const [page, setPage] = useState('dashboard');
-  const [report, setReport] = useState<Report | null>(null);
-  const [profile, setProfile] = useState<Profile>({ name: 'Aarav Kumar', degree: 'B.Tech Computer Science', year: '3', cgpa: '8.6', skills: 'React, Python, Figma' });
-  const [error, setError] = useState('');
   const [toast, setToast] = useState<ToastState | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
+  const [dark, setDark] = useState(false);
 
-  const load = useCallback(async (reset = false) => {
+  const profile: Profile = state.profile ?? { name: 'Aarav Kumar', degree: 'B.Tech Computer Science', year: '3', cgpa: '8.6', skills: 'React, Python, Figma' };
+  const deadline = state.opportunity?.deadline ?? '2026-08-15';
+  const title = state.opportunity?.title ?? 'National Student Innovation Hackathon';
+
+  const report = useMemo(
+    () => buildReport(state.requirements, state.documents, profile, deadline),
+    [state.requirements, state.documents, profile, deadline],
+  );
+
+  const navigate = (key: string) => { setPage(key); setMobileNav(false); };
+
+  const handleResolve = async (id: string) => {
     try {
-      setError('');
-      const r = reset ? await api.resetDemo() : await api.fetchDemo();
-      setReport(r);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not reach the local API.');
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const resolve = useCallback(async (id: string) => {
-    try {
-      const r = await api.resolveRequirement(id);
-      setReport(r);
+      await actions.resolveRequirement(id);
       setToast({ kind: 'success', message: 'Readiness recalculated from verified evidence.' });
     } catch (e) {
       setToast({ kind: 'error', message: e instanceof Error ? e.message : 'Action failed.' });
     }
-  }, []);
+  };
 
-  const extract = useCallback(async (text: string) => {
+  const handleExtract = async (text: string) => {
     try {
-      const reqs = await api.extractRequirements(text);
-      setReport((old) => (old ? { ...old, requirements: reqs } : old));
+      await actions.extractRequirements(text);
       return true;
     } catch (e) {
       setToast({ kind: 'error', message: e instanceof Error ? e.message : 'Extraction failed.' });
       return false;
     }
-  }, []);
-
-  const navigate = (key: string) => {
-    setPage(key);
-    setMobileNav(false);
   };
 
-  if (error && !report) {
+  const handleReset = async () => {
+    try {
+      await actions.resetDemo();
+      setToast({ kind: 'success', message: 'Demo reset to original state.' });
+    } catch (e) {
+      setToast({ kind: 'error', message: e instanceof Error ? e.message : 'Reset failed.' });
+    }
+  };
+
+  const handleSaveProfile = async (p: Profile) => {
+    try {
+      await actions.saveProfile(p);
+    } catch (e) {
+      setToast({ kind: 'error', message: e instanceof Error ? e.message : 'Save failed.' });
+    }
+  };
+
+  const handleUpload = async (name: string, category: string) => {
+    try {
+      await actions.uploadDocument(name, category);
+      setToast({ kind: 'success', message: `${name} added to evidence vault.` });
+    } catch (e) {
+      setToast({ kind: 'error', message: e instanceof Error ? e.message : 'Upload failed.' });
+    }
+  };
+
+  const handleDeleteDoc = async (id: string) => {
+    try {
+      await actions.deleteDocument(id);
+      setToast({ kind: 'success', message: 'Document removed.' });
+    } catch (e) {
+      setToast({ kind: 'error', message: e instanceof Error ? e.message : 'Delete failed.' });
+    }
+  };
+
+  if (state.error && !state.profile) {
     return (
       <div className="full-state">
         <AlertCircle size={28} />
         <b>ApplyReady AI</b>
-        <p>{error}</p>
+        <p>{state.error}</p>
         <button className="btn btn-primary" onClick={() => load()}>Retry</button>
       </div>
     );
   }
 
-  if (!report) {
+  if (state.loading) {
     return (
-      <div className="full-state">
-        <Loader2 size={28} className="spin" />
-        <b>ApplyReady AI</b>
-        <p>Preparing your workspace…</p>
+      <div className="shell">
+        <Sidebar active={page} onNavigate={navigate} onReset={handleReset} profile={profile} mobileOpen={false} onCloseMobile={() => {}} dark={dark} onToggleDark={() => setDark(!dark)} />
+        <main>
+          <div className="main-inner">
+            <Skeleton />
+          </div>
+        </main>
       </div>
     );
   }
 
   return (
-    <div className="shell">
+    <div className={`shell ${dark ? 'dark' : ''}`}>
       <Sidebar
         active={page}
         onNavigate={navigate}
-        onReset={() => load(true)}
+        onReset={handleReset}
         profile={profile}
         mobileOpen={mobileNav}
         onCloseMobile={() => setMobileNav(false)}
+        dark={dark}
+        onToggleDark={() => setDark(!dark)}
       />
       <main>
         <button className="mobile-nav-toggle" onClick={() => setMobileNav(true)} aria-label="Open navigation">
@@ -97,13 +129,13 @@ export function App() {
         </button>
         <div className="main-inner">
           {toast && <Toast toast={toast} onClose={() => setToast(null)} />}
-          {page === 'dashboard' && <Dashboard report={report} profile={profile} onResolve={resolve} onNavigate={navigate} />}
-          {page === 'upload' && <Upload onExtract={extract} setToast={setToast} onNavigate={navigate} />}
-          {page === 'requirements' && <Requirements report={report} onResolve={resolve} />}
-          {page === 'vault' && <Vault report={report} onAddTranscript={() => resolve('transcript')} />}
-          {page === 'readiness' && <Readiness report={report} onResolve={resolve} />}
-          {page === 'profile' && <ProfilePage profile={profile} onSave={setProfile} setToast={setToast} />}
-          {page === 'settings' && <Settings setToast={setToast} />}
+          {page === 'dashboard' && <Dashboard report={report} profile={profile} opportunityTitle={title} deadline={deadline} onResolve={handleResolve} onNavigate={navigate} />}
+          {page === 'upload' && <Upload onExtract={handleExtract} setToast={setToast} onNavigate={navigate} />}
+          {page === 'requirements' && <Requirements report={report} onResolve={handleResolve} />}
+          {page === 'vault' && <Vault report={report} onUpload={handleUpload} onDeleteDoc={handleDeleteDoc} onResolve={handleResolve} />}
+          {page === 'readiness' && <Readiness report={report} onResolve={handleResolve} />}
+          {page === 'profile' && <ProfilePage profile={profile} onSave={handleSaveProfile} setToast={setToast} />}
+          {page === 'settings' && <Settings setToast={setToast} dark={dark} onToggleDark={() => setDark(!dark)} />}
         </div>
       </main>
     </div>

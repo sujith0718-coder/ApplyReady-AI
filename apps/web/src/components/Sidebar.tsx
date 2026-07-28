@@ -1,4 +1,4 @@
-import { LayoutDashboard, Upload, ListChecks, FolderLock, Gauge, User, Settings as SettingsIcon, RefreshCw, X } from 'lucide-react';
+import { LayoutDashboard, Upload as UploadIcon, ListChecks, FolderLock, Gauge, User, Settings as SettingsIcon, RefreshCw, X, Moon, Sun } from 'lucide-react';
 import type { ComponentType } from 'react';
 
 export interface NavItem {
@@ -9,7 +9,7 @@ export interface NavItem {
 
 export const NAV: NavItem[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { key: 'upload', label: 'Opportunity Upload', icon: Upload },
+  { key: 'upload', label: 'Opportunity Upload', icon: UploadIcon },
   { key: 'requirements', label: 'Requirements', icon: ListChecks },
   { key: 'vault', label: 'Evidence Vault', icon: FolderLock },
   { key: 'readiness', label: 'Readiness Report', icon: Gauge },
@@ -24,6 +24,8 @@ export function Sidebar({
   profile,
   mobileOpen,
   onCloseMobile,
+  dark,
+  onToggleDark,
 }: {
   active: string;
   onNavigate: (key: string) => void;
@@ -31,6 +33,8 @@ export function Sidebar({
   profile: { name: string; degree: string; year: string };
   mobileOpen: boolean;
   onCloseMobile: () => void;
+  dark: boolean;
+  onToggleDark: () => void;
 }) {
   const initials = profile.name.split(' ').map((s) => s[0]).join('').slice(0, 2).toUpperCase();
   return (
@@ -59,7 +63,6 @@ export function Sidebar({
               >
                 <Icon size={17} className="nav-icon" />
                 <span>{item.label}</span>
-                {isActive && <span className="nav-active-bar" />}
               </button>
             );
           })}
@@ -68,6 +71,11 @@ export function Sidebar({
         <button className="nav-reset" onClick={onReset}>
           <RefreshCw size={15} />
           Reset demo
+        </button>
+
+        <button className="nav-reset" onClick={onToggleDark}>
+          {dark ? <Sun size={15} /> : <Moon size={15} />}
+          {dark ? 'Light mode' : 'Dark mode'}
         </button>
 
         <div className="sidebar-profile">

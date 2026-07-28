@@ -6,6 +6,10 @@ export interface IDocument {
   category?: string;
   verification_status?: 'verified'|'unverified'|'needs_review';
   extracted_text?: string;
+  mime_type?: string;
+  size?: number;
+  path?: string;
+  uploaded_at?: Date;
 }
 
 const DocumentSchema = new mongoose.Schema<any>({
@@ -15,6 +19,10 @@ const DocumentSchema = new mongoose.Schema<any>({
   category: { type: String },
   verification_status: { type: String, enum: ['verified','unverified','needs_review'] },
   extracted_text: { type: String },
+  mime_type: { type: String },
+  size: { type: Number },
+  path: { type: String },
+  uploaded_at: { type: Date, default: () => new Date() },
 }, { timestamps: true, strict: true });
 
 DocumentSchema.index({ opportunity_id: 1 });

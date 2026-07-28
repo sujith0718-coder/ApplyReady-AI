@@ -1,1 +1,1 @@
-{"root":["./src/main.tsx"],"version":"5.9.3"}
+{"root":["./src/App.tsx","./src/api.ts","./src/main.tsx","./src/types.ts","./src/components/Badges.tsx","./src/components/Card.tsx","./src/components/PageHeader.tsx","./src/components/ScoreRing.tsx","./src/components/Sidebar.tsx","./src/components/Toast.tsx","./src/pages/Dashboard.tsx","./src/pages/Profile.tsx","./src/pages/Readiness.tsx","./src/pages/Requirements.tsx","./src/pages/Settings.tsx","./src/pages/Upload.tsx","./src/pages/Vault.tsx"],"version":"5.9.3"}

@@ -4,3 +4,5 @@ dist
 .env
 coverage
 uploads
+# TypeScript incremental build info (should not be committed)
+**/*.tsbuildinfo

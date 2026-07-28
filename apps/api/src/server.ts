@@ -3,20 +3,243 @@ import cors from 'cors';
 import { z } from 'zod';
 import { normalizeNotice } from './domain.js';
 
+// In-memory demo datastore that mimics the Supabase tables used by the frontend.
+const DEMO_OPPORTUNITY_ID = 'a0000000-0000-0000-0000-000000000001';
+let idSeq = 1;
+const genId = () => `${Date.now()}-${idSeq++}`;
+
+let profiles: any[] = [
+  { id: genId(), name: 'Demo User', degree: 'BSc', year: 3, cgpa: 8.5, skills: ['AI', 'ML'] },
+];
+
+let opportunities: any[] = [
+  { id: DEMO_OPPORTUNITY_ID, title: 'Demo Opportunity', deadline: '2026-12-31', notice_text: 'This is a sample notice used for the demo.' },
+];
+
+let requirements: any[] = normalizeNotice(opportunities[0].notice_text).map((r, i) => ({
+  id: genId(),
+  opportunity_id: DEMO_OPPORTUNITY_ID,
+  req_key: r.id,
+  title: r.title,
+  description: r.description,
+  type: r.type,
+  priority: r.priority,
+  status: r.status,
+  source_text: r.sourceText,
+  confidence: r.confidence,
+  dependencies: r.dependencies,
+  created_at: new Date(Date.now() - i * 1000).toISOString(),
+}));
+
+let documents: any[] = [];
+
 const app = express();
 app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173' }));
 app.use(express.json({ limit: '1mb' }));
 
+// Attempt MongoDB connection (non-blocking fallback)
+import { connectToMongo, dbConnected } from './db.js';
+import * as models from './models/index.js';
+
+let _dbReady = false;
+(async () => {
+  const uri = process.env.MONGODB_URI;
+  try {
+    const ok = await connectToMongo(uri, 5000);
+    if (ok) {
+      console.log('Connected to MongoDB Atlas');
+      _dbReady = true;
+      // seed demo data if missing
+      try {
+        const existingOp = await models.OpportunityModel.findOne({ id: DEMO_OPPORTUNITY_ID }).lean().exec();
+        if (!existingOp) {
+          const opp = await models.OpportunityModel.create({ id: DEMO_OPPORTUNITY_ID, title: 'Demo Opportunity', deadline: '2026-12-31', notice_text: 'This is a sample notice used for the demo.' });
+          const reqs = normalizeNotice(opp.notice_text);
+          const rows = reqs.map((r: any, i: number) => ({ opportunity_id: DEMO_OPPORTUNITY_ID, req_key: r.id, title: r.title, description: r.description, type: r.type, priority: r.priority, status: r.status, source_text: r.sourceText, confidence: r.confidence, dependencies: r.dependencies }));
+          if (rows.length) await models.RequirementModel.insertMany(rows).catch(() => {});
+          // seed profile if none
+          const profCount = await models.ProfileModel.countDocuments().exec();
+          if (profCount === 0) {
+            await models.ProfileModel.create({ name: 'Demo User', degree: 'BSc', year: 3, cgpa: 8.5, skills: ['AI','ML'] });
+          }
+        }
+      } catch (e: any) {
+        console.warn('Seeding skipped:', e?.message || e);
+      }
+    } else {
+      console.log('Running in Demo Mode (In-Memory)');
+      _dbReady = false;
+    }
+  } catch (err: any) {
+    console.log('Running in Demo Mode (In-Memory)');
+    _dbReady = false;
+  }
+})();
+
+// Health
 app.get('/api/v1/health', (_, res) => {
-  res.json({ ok: true, mode: process.env.OPENAI_API_KEY ? 'provider-ready' : 'deterministic-demo' });
+  res.json({ ok: true, mode: _dbReady ? 'provider-ready' : 'deterministic-demo' });
+});
+// Extract (existing behavior)
+app.post('/api/v1/opportunities/extract', (req, res) => {
+  const p = z.object({ text: z.string().min(1).max(25000) }).safeParse(req.body);
+  if (!p.success) return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Please provide notice text.' } });
+  res.json({ provider: 'deterministic-mock', requirements: normalizeNotice(p.data.text) });
 });
 
-app.post('/api/v1/opportunities/extract', (req, res) => {
-  const p = z.object({ text: z.string().min(30).max(25000) }).safeParse(req.body);
-  if (!p.success) {
-    return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Please provide at least 30 characters of notice text.' } });
+// Profiles - simple list / upsert / patch
+app.get('/api/v1/profiles', async (_, res) => {
+  if (_dbReady) {
+    const docs = await models.ProfileModel.find().lean().exec();
+    return res.json(docs);
   }
-  res.json({ provider: 'deterministic-mock', requirements: normalizeNotice(p.data.text) });
+  return res.json(profiles);
+});
+
+app.post('/api/v1/profiles', async (req, res) => {
+  const body = req.body;
+  if (_dbReady) {
+    // Replace existing profile(s) with this one (demo semantics)
+    await models.ProfileModel.deleteMany({}).exec();
+    const created = await models.ProfileModel.create(body);
+    return res.status(201).json(created.toObject());
+  }
+  const p = { id: genId(), ...body };
+  profiles.splice(0, profiles.length, p);
+  res.status(201).json(p);
+});
+
+app.patch('/api/v1/profiles/:id', async (req, res) => {
+  if (_dbReady) {
+    const updated = await models.ProfileModel.findOneAndUpdate({ $or: [{ id: req.params.id }, { _id: req.params.id }] }, req.body, { new: true }).lean().exec();
+    if (!updated) return res.status(404).json({ error: 'not_found' });
+    return res.json(updated);
+  }
+  const idx = profiles.findIndex((p) => p.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'not_found' });
+  profiles[idx] = { ...profiles[idx], ...req.body };
+  res.json(profiles[idx]);
+});
+
+// Opportunities
+app.get('/api/v1/opportunities/:id', async (req, res) => {
+  if (_dbReady) {
+    const o = await models.OpportunityModel.findOne({ id: req.params.id }).lean().exec();
+    if (!o) return res.status(404).json({ error: 'not_found' });
+    return res.json(o);
+  }
+  const o = opportunities.find((x) => x.id === req.params.id);
+  if (!o) return res.status(404).json({ error: 'not_found' });
+  res.json(o);
+});
+
+// Requirements for an opportunity
+app.get('/api/v1/opportunities/:id/requirements', async (req, res) => {
+  if (_dbReady) {
+    const list = await models.RequirementModel.find({ opportunity_id: req.params.id }).sort({ createdAt: 1 }).lean().exec();
+    return res.json(list);
+  }
+  const list = requirements.filter((r) => r.opportunity_id === req.params.id).sort((a, b) => (a.created_at || '') > (b.created_at || '') ? 1 : -1);
+  res.json(list);
+});
+
+app.delete('/api/v1/opportunities/:id/requirements', async (req, res) => {
+  if (_dbReady) {
+    await models.RequirementModel.deleteMany({ opportunity_id: req.params.id }).exec();
+    return res.status(204).end();
+  }
+  for (let i = requirements.length - 1; i >= 0; i--) {
+    if (requirements[i].opportunity_id === req.params.id) requirements.splice(i, 1);
+  }
+  res.status(204).end();
+});
+
+app.post('/api/v1/opportunities/:id/requirements', async (req, res) => {
+  const rows = Array.isArray(req.body) ? req.body : [req.body];
+  if (_dbReady) {
+    const created = await models.RequirementModel.insertMany(rows.map((r: any) => ({ ...r })), { ordered: false }).catch((e) => {
+      // ignore duplicate key errors during inserts to match demo behavior
+      if (e && e.code !== 11000) throw e;
+      return e && e.insertedDocs ? e.insertedDocs : [];
+    });
+    return res.status(201).json(created);
+  }
+  const inserted = rows.map((r: any) => {
+    const row = { id: genId(), ...r };
+    requirements.push(row);
+    return row;
+  });
+  res.status(201).json(inserted);
+});
+
+// Update a specific requirement by req_key under an opportunity
+app.patch('/api/v1/opportunities/:id/requirements/:reqKey', async (req, res) => {
+  const id = req.params.id;
+  const reqKey = req.params.reqKey;
+  if (_dbReady) {
+    const row = await models.RequirementModel.findOneAndUpdate({ opportunity_id: id, req_key: reqKey }, req.body, { new: true }).lean().exec();
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    return res.json(row);
+  }
+  const row = requirements.find((r) => r.opportunity_id === id && r.req_key === reqKey);
+  if (!row) return res.status(404).json({ error: 'not_found' });
+  Object.assign(row, req.body);
+  res.json(row);
+});
+// Documents endpoints
+app.get('/api/v1/opportunities/:id/documents', async (req, res) => {
+  if (_dbReady) {
+    const list = await models.DocumentModel.find({ opportunity_id: req.params.id }).sort({ createdAt: 1 }).lean().exec();
+    return res.json(list);
+  }
+  const list = documents.filter((d) => d.opportunity_id === req.params.id).sort((a, b) => (a.uploaded_at || '') > (b.uploaded_at || '') ? 1 : -1);
+  res.json(list);
+});
+
+app.post('/api/v1/opportunities/:id/documents', async (req, res) => {
+  const body = req.body;
+  if (_dbReady) {
+    const doc = await models.DocumentModel.create({ ...body, opportunity_id: req.params.id });
+    return res.status(201).json(doc.toObject());
+  }
+  const doc = { id: genId(), uploaded_at: new Date().toISOString(), ...body };
+  documents.push(doc);
+  res.status(201).json(doc);
+});
+
+app.delete('/api/v1/documents/:id', async (req, res) => {
+  if (_dbReady) {
+    const r = await models.DocumentModel.findOneAndDelete({ $or: [{ id: req.params.id }, { _id: req.params.id }] }).lean().exec();
+    if (!r) return res.status(404).json({ error: 'not_found' });
+    return res.status(204).end();
+  }
+  const idx = documents.findIndex((d) => d.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'not_found' });
+  documents.splice(idx, 1);
+  res.status(204).end();
+});
+// Reset demo endpoint (convenience)
+app.post('/api/v1/opportunities/:id/reset-demo', async (req, res) => {
+  const id = req.params.id;
+  if (_dbReady) {
+    // set statuses according to domain defaults
+    await models.RequirementModel.updateMany({ opportunity_id: id, req_key: 'transcript' }, { $set: { status: 'missing' } }).exec();
+    await models.RequirementModel.updateMany({ opportunity_id: id, req_key: 'endorsement' }, { $set: { status: 'blocked' } }).exec();
+    await models.RequirementModel.updateMany({ opportunity_id: id, req_key: 'submission' }, { $set: { status: 'pending' } }).exec();
+    // remove demo docs by name
+    await models.DocumentModel.deleteMany({ opportunity_id: id, name: { $in: ['Official_Transcript.pdf', 'Institute_Endorsement.pdf'] } }).exec();
+    return res.json({ ok: true });
+  }
+  // in-memory fallback
+  for (const r of requirements.filter((x) => x.opportunity_id === id)) {
+    if (r.req_key === 'transcript') r.status = 'missing';
+    if (r.req_key === 'endorsement') r.status = 'blocked';
+    if (r.req_key === 'submission') r.status = 'pending';
+  }
+  for (let i = documents.length - 1; i >= 0; i--) {
+    if (documents[i].opportunity_id === id && (documents[i].name === 'Official_Transcript.pdf' || documents[i].name === 'Institute_Endorsement.pdf')) documents.splice(i, 1);
+  }
+  res.json({ ok: true });
 });
 
 app.use((_, res) => {

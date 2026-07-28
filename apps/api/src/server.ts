@@ -63,6 +63,41 @@ const app = express();
 app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173' }));
 app.use(express.json({ limit: '1mb' }));
 
+// Serve uploaded files for preview (secure enough for demo)
+app.use('/uploads', express.static(UPLOAD_DIR));
+
+// helper libs for extraction
+import pdfParse from 'pdf-parse';
+import Tesseract from 'tesseract.js';
+import cheerio from 'cheerio';
+
+async function extractTextFromFile(filePath: string, mimetype: string) {
+  try {
+    if (mimetype === 'application/pdf') {
+      const data = await fs.promises.readFile(filePath);
+      const parsed: any = await pdfParse(data);
+      const txt = (parsed && parsed.text) ? String(parsed.text).trim() : '';
+      if (!txt) return { text: '', confidence: 0 };
+      return { text: txt, confidence: 0.9 };
+    }
+    if (mimetype.startsWith('image/')) {
+      // perform OCR using tesseract.js on the image file path
+      try {
+        const result = await Tesseract.recognize(filePath, 'eng', { logger: () => {} });
+        const txt = (result && result.data && result.data.text) ? String(result.data.text).trim() : '';
+        const conf = (result && result.data && typeof result.data.confidence === 'number') ? Number(result.data.confidence) / 100 : 0;
+        return { text: txt, confidence: conf || 0 };
+      } catch (e) {
+        return { text: '', confidence: 0 };
+      }
+    }
+  } catch (e) {
+    console.warn('Extraction failed:', (e as any)?.message || e);
+    return { text: '', confidence: 0 };
+  }
+  return { text: '', confidence: 0 };
+}
+
 // Attempt MongoDB connection (non-blocking fallback)
 import { connectToMongo, dbConnected } from './db.js';
 import * as models from './models/index.js';
@@ -238,6 +273,17 @@ app.post('/api/v1/opportunities/:id/requirements', async (req, res) => {
 app.patch('/api/v1/opportunities/:id/requirements/:reqKey', async (req, res) => {
   const id = req.params.id;
   const reqKey = req.params.reqKey;
+  // Prevent marking completed when no verified evidence exists
+  if (req.body && req.body.status === 'completed') {
+    if (_dbReady) {
+      const docCount = await models.DocumentModel.countDocuments({ opportunity_id: id, verification_status: 'verified' }).exec();
+      if (!docCount) return res.status(400).json({ error: 'no_verified_evidence', message: 'Upload supporting evidence before marking complete.' });
+    } else {
+      const hasVerified = documents.some((d) => d.opportunity_id === id && d.verification_status === 'verified');
+      if (!hasVerified) return res.status(400).json({ error: 'no_verified_evidence', message: 'Upload supporting evidence before marking complete.' });
+    }
+  }
+
   if (_dbReady) {
     const row = await models.RequirementModel.findOneAndUpdate({ opportunity_id: id, req_key: reqKey }, req.body, { new: true }).lean().exec();
     if (!row) return res.status(404).json({ error: 'not_found' });
@@ -263,7 +309,8 @@ app.post('/api/v1/opportunities/:id/documents', upload.single('file'), async (re
   const anyReq: any = req as any;
   if (anyReq.file) {
     const file = anyReq.file as any;
-    const meta = {
+    const storedPath = path.join('apps', 'api', 'uploads', file.filename);
+    const meta: any = {
       opportunity_id: req.params.id,
       name: req.body.name || file.originalname,
       category: req.body.category || file.originalname || 'Unknown',
@@ -271,9 +318,25 @@ app.post('/api/v1/opportunities/:id/documents', upload.single('file'), async (re
       extracted_text: req.body.extracted_text || 'Upload pending text extraction',
       mime_type: file.mimetype,
       size: file.size,
-      path: path.join('apps', 'api', 'uploads', file.filename),
+      path: storedPath,
       uploaded_at: new Date().toISOString(),
     };
+
+    // attempt server-side extraction (PDF / image)
+    try {
+      const fp = path.join(process.cwd(), 'apps', 'api', 'uploads', file.filename);
+      const extracted = await extractTextFromFile(fp, file.mimetype);
+      if (extracted && extracted.text) {
+        meta.extracted_text = extracted.text;
+        meta.extracted_confidence = extracted.confidence || 0;
+      } else {
+        meta.extracted_text = ''; // explicitly empty to indicate no readable text
+        meta.extracted_confidence = 0;
+      }
+    } catch (e) {
+      meta.extracted_text = '';
+      meta.extracted_confidence = 0;
+    }
 
     if (_dbReady) {
       const doc = await models.DocumentModel.create({ ...meta, opportunity_id: req.params.id });
@@ -296,6 +359,20 @@ app.post('/api/v1/opportunities/:id/documents', upload.single('file'), async (re
   res.status(201).json(doc);
 });
 
+app.patch('/api/v1/documents/:id', async (req, res) => {
+  const id = req.params.id;
+  if (_dbReady) {
+    const updated = await models.DocumentModel.findOneAndUpdate({ $or: [{ id }, { _id: id }] }, req.body, { new: true }).lean().exec();
+    if (!updated) return res.status(404).json({ error: 'not_found' });
+    return res.json(updated);
+  }
+  const idx = documents.findIndex((d) => d.id === id);
+  if (idx === -1) return res.status(404).json({ error: 'not_found' });
+  documents[idx] = { ...documents[idx], ...req.body };
+  res.json(documents[idx]);
+});
+
+// delete document
 app.delete('/api/v1/documents/:id', async (req, res) => {
   if (_dbReady) {
     const r = await models.DocumentModel.findOneAndDelete({ $or: [{ id: req.params.id }, { _id: req.params.id }] }).lean().exec();

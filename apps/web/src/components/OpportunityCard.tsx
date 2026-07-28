@@ -23,7 +23,7 @@ export function OpportunityCard({ id, activeId, title, organization, deadline, r
       className={`opportunity-card card ${isActive ? 'active' : ''}`}
       tabIndex={0}
       role="button"
-      aria-pressed={isActive}
+      aria-pressed={!!isActive}
       aria-label={`Opportunity ${title}`}
       onClick={() => onAction && onAction()}
       onKeyDown={handleKey}

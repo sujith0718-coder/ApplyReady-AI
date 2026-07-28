@@ -17,6 +17,8 @@ export function Dashboard({
   deadline,
   onResolve,
   onNavigate,
+  opportunities,
+  onSelectOpportunity,
 }: {
   report: Report;
   profile: Profile;
@@ -24,6 +26,8 @@ export function Dashboard({
   deadline: string;
   onResolve: (id: string) => void;
   onNavigate: (key: string) => void;
+  opportunities: { id: string; title: string; deadline?: string; notice_text?: string }[];
+  onSelectOpportunity: (id: string) => void;
 }) {
   const completed = report.requirements.filter((x) => x.status === 'completed').length;
   const missing = report.requirements.filter((x) => x.status === 'missing').length;
@@ -136,7 +140,18 @@ export function Dashboard({
       <section style={{ marginTop: 20 }}>
         <SectionTitle>Other opportunities</SectionTitle>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
-          <OpportunityCard title={opportunityTitle} organization="Demo Org" deadline={deadline} readiness={report.readiness} risk={report.risk} onAction={() => onNavigate('readiness')} />
+          {opportunities.map((o) => (
+            <OpportunityCard
+              key={o.id}
+              title={o.title}
+              organization=""
+              deadline={o.deadline || ''}
+              readiness={o.id === (opportunityTitle ? undefined : undefined) ? report.readiness : 0}
+              risk={report.risk}
+              onAction={() => { onSelectOpportunity(o.id); onNavigate('readiness'); }}
+            />
+          ))}
+          {opportunities.length === 0 && <div className="empty-col muted">No opportunities yet. Upload one to get started.</div>}
         </div>
       </section>
     </>

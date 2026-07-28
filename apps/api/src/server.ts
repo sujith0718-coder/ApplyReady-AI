@@ -148,6 +148,15 @@ app.patch('/api/v1/profiles/:id', async (req, res) => {
 });
 
 // Opportunities
+// List all opportunities
+app.get('/api/v1/opportunities', async (req, res) => {
+  if (_dbReady) {
+    const list = await models.OpportunityModel.find().sort({ createdAt: -1 }).lean().exec();
+    return res.json(list);
+  }
+  return res.json(opportunities.slice().sort((a, b) => (a.created_at || '') < (b.created_at || '') ? 1 : -1));
+});
+
 app.get('/api/v1/opportunities/:id', async (req, res) => {
   if (_dbReady) {
     const o = await models.OpportunityModel.findOne({ id: req.params.id }).lean().exec();
@@ -157,6 +166,33 @@ app.get('/api/v1/opportunities/:id', async (req, res) => {
   const o = opportunities.find((x) => x.id === req.params.id);
   if (!o) return res.status(404).json({ error: 'not_found' });
   res.json(o);
+});
+
+// Create a new opportunity and extract requirements for it
+app.post('/api/v1/opportunities', async (req, res) => {
+  const body = req.body;
+  if (!body || typeof body.notice_text !== 'string' || body.notice_text.trim().length === 0) {
+    return res.status(400).json({ error: 'Please provide notice_text' });
+  }
+  const title = body.title || (body.notice_text || '').slice(0, 80);
+  const deadline = body.deadline || null;
+
+  if (_dbReady) {
+    const created = await models.OpportunityModel.create({ id: body.id || genId(), title, deadline, notice_text: body.notice_text });
+    const reqs = normalizeNotice(body.notice_text);
+    const rows = reqs.map((r: any) => ({ opportunity_id: created.id, req_key: r.id, title: r.title, description: r.description, type: r.type, priority: r.priority, status: r.status, source_text: r.sourceText, confidence: r.confidence, dependencies: r.dependencies }));
+    if (rows.length) await models.RequirementModel.insertMany(rows).catch(() => {});
+    return res.status(201).json(created.toObject());
+  }
+
+  const id = genId();
+  const opp = { id, title, deadline, notice_text: body.notice_text, created_at: new Date().toISOString() };
+  opportunities.push(opp);
+  const reqs = normalizeNotice(body.notice_text);
+  reqs.forEach((r: any, i: number) => {
+    requirements.push({ id: genId(), opportunity_id: id, req_key: r.id, title: r.title, description: r.description, type: r.type, priority: r.priority, status: r.status, source_text: r.sourceText, confidence: r.confidence, dependencies: r.dependencies, created_at: new Date(Date.now() - i * 1000).toISOString() });
+  });
+  res.status(201).json(opp);
 });
 
 // Requirements for an opportunity

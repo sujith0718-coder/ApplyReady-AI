@@ -1,7 +1,18 @@
 import { useEffect, useState, useCallback } from 'react';
-import { supabase, DEMO_OPPORTUNITY_ID } from './supabase';
+import { DEMO_OPPORTUNITY_ID } from './supabase';
 import type { Profile, Requirement, Document } from '../types';
 import { buildReport, normalizeNotice } from './engine';
+
+const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
+
+async function getJsonOrThrow(res: Response) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text || '{}');
+  } catch {
+    throw new Error(text || res.statusText);
+  }
+}
 
 export interface Opportunity {
   id: string;
@@ -33,24 +44,28 @@ export function useAppData() {
     setState((s) => ({ ...s, loading: true, error: '' }));
     try {
       const [profRes, oppRes, reqRes, docRes] = await Promise.all([
-        supabase.from('profiles').select('*').limit(1).maybeSingle(),
-        supabase.from('opportunities').select('*').eq('id', DEMO_OPPORTUNITY_ID).maybeSingle(),
-        supabase.from('requirements').select('*').eq('opportunity_id', DEMO_OPPORTUNITY_ID).order('created_at'),
-        supabase.from('documents').select('*').eq('opportunity_id', DEMO_OPPORTUNITY_ID).order('uploaded_at'),
+        fetch(`${API_BASE}/api/v1/profiles`),
+        fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}`),
+        fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/requirements`),
+        fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/documents`),
       ]);
 
-      if (profRes.error) throw profRes.error;
-      if (oppRes.error) throw oppRes.error;
-      if (reqRes.error) throw reqRes.error;
-      if (docRes.error) throw docRes.error;
+      const [profJson, oppJson, reqJson, docJson] = await Promise.all([
+        getJsonOrThrow(profRes),
+        getJsonOrThrow(oppRes),
+        getJsonOrThrow(reqRes),
+        getJsonOrThrow(docRes),
+      ]);
+
+      const profData = Array.isArray(profJson) ? profJson[0] ?? null : profJson || null;
 
       setState({
-        profile: profRes.data
-          ? { name: profRes.data.name, degree: profRes.data.degree, year: profRes.data.year, cgpa: profRes.data.cgpa, skills: profRes.data.skills }
+        profile: profData
+          ? { name: profData.name, degree: profData.degree, year: profData.year, cgpa: profData.cgpa, skills: profData.skills }
           : null,
-        opportunity: oppRes.data as Opportunity | null,
-        requirements: (reqRes.data ?? []).map(rowToRequirement),
-        documents: (docRes.data ?? []).map(rowToDocument),
+        opportunity: oppJson || null,
+        requirements: (reqJson ?? []).map(rowToRequirement),
+        documents: (docJson ?? []).map(rowToDocument),
         loading: false,
         error: '',
       });
@@ -72,14 +87,14 @@ export function useAppData() {
 
 function rowToRequirement(row: any): Requirement {
   return {
-    id: row.req_key,
+    id: row.req_key ?? row.id,
     title: row.title,
     description: row.description,
     type: row.type,
     priority: row.priority,
     status: row.status,
-    sourceText: row.source_text,
-    confidence: Number(row.confidence),
+    sourceText: row.source_text ?? row.sourceText,
+    confidence: Number(row.confidence ?? row.confidence),
     dependencies: row.dependencies ?? [],
   };
 }
@@ -89,56 +104,71 @@ function rowToDocument(row: any): Document {
     id: row.id,
     name: row.name,
     category: row.category,
-    verificationStatus: row.verification_status,
-    extractedText: row.extracted_text,
-    uploadedAt: row.uploaded_at,
+    verificationStatus: row.verification_status ?? row.verificationStatus,
+    extractedText: row.extracted_text ?? row.extractedText,
+    uploadedAt: row.uploaded_at ?? row.uploadedAt,
   };
 }
 
 export function useActions(load: () => Promise<void>) {
   const resolveRequirement = useCallback(async (reqKey: string) => {
-    const { error } = await supabase
-      .from('requirements')
-      .update({ status: 'completed' })
-      .eq('opportunity_id', DEMO_OPPORTUNITY_ID)
-      .eq('req_key', reqKey);
-    if (error) throw error;
+    const res = await fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/requirements/${encodeURIComponent(reqKey)}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'completed' }),
+    });
+    if (!res.ok) throw new Error((await res.text()) || res.statusText);
 
     if (reqKey === 'transcript') {
-      await supabase.from('documents').upsert({
-        opportunity_id: DEMO_OPPORTUNITY_ID,
-        name: 'Official_Transcript.pdf',
-        category: 'Transcript',
-        verification_status: 'needs_review',
-        extracted_text: 'CGPA: 8.3',
+      await fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/documents`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          opportunity_id: DEMO_OPPORTUNITY_ID,
+          name: 'Official_Transcript.pdf',
+          category: 'Transcript',
+          verification_status: 'needs_review',
+          extracted_text: 'CGPA: 8.3',
+        }),
       });
     }
     if (reqKey === 'endorsement') {
-      await supabase.from('documents').upsert({
-        opportunity_id: DEMO_OPPORTUNITY_ID,
-        name: 'Institute_Endorsement.pdf',
-        category: 'Endorsement',
-        verification_status: 'verified',
-        extracted_text: 'Signed by Principal, institutional seal applied',
+      await fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/documents`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          opportunity_id: DEMO_OPPORTUNITY_ID,
+          name: 'Institute_Endorsement.pdf',
+          category: 'Endorsement',
+          verification_status: 'verified',
+          extracted_text: 'Signed by Principal, institutional seal applied',
+        }),
       });
     }
     await load();
   }, [load]);
 
   const resetDemo = useCallback(async () => {
-    await supabase.from('requirements').update({ status: 'missing' }).eq('opportunity_id', DEMO_OPPORTUNITY_ID).eq('req_key', 'transcript');
-    await supabase.from('requirements').update({ status: 'blocked' }).eq('opportunity_id', DEMO_OPPORTUNITY_ID).eq('req_key', 'endorsement');
-    await supabase.from('requirements').update({ status: 'pending' }).eq('opportunity_id', DEMO_OPPORTUNITY_ID).eq('req_key', 'submission');
-    await supabase.from('documents').delete().eq('opportunity_id', DEMO_OPPORTUNITY_ID).eq('name', 'Official_Transcript.pdf');
-    await supabase.from('documents').delete().eq('opportunity_id', DEMO_OPPORTUNITY_ID).eq('name', 'Institute_Endorsement.pdf');
+    const res = await fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/reset-demo`, { method: 'POST' });
+    if (!res.ok) throw new Error((await res.text()) || res.statusText);
     await load();
   }, [load]);
 
   const extractRequirements = useCallback(async (text: string): Promise<Requirement[]> => {
-    const reqs = normalizeNotice(text);
-    const { error: delErr } = await supabase.from('requirements').delete().eq('opportunity_id', DEMO_OPPORTUNITY_ID);
-    if (delErr) throw delErr;
-    const rows = reqs.map((r) => ({
+    // Server can compute normalized requirements; fallback to local normalization if needed.
+    const extractRes = await fetch(`${API_BASE}/api/v1/opportunities/extract`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    const extractJson = extractRes.ok ? await extractRes.json() : { requirements: normalizeNotice(text) };
+    const reqs = extractJson.requirements ?? extractJson;
+
+    // replace stored requirements
+    const delRes = await fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/requirements`, { method: 'DELETE' });
+    if (!delRes.ok) throw new Error((await delRes.text()) || delRes.statusText);
+
+    const rows = reqs.map((r: any) => ({
       opportunity_id: DEMO_OPPORTUNITY_ID,
       req_key: r.id,
       title: r.title,
@@ -150,41 +180,49 @@ export function useActions(load: () => Promise<void>) {
       source_text: r.sourceText,
       dependencies: r.dependencies,
     }));
-    const { error: insErr } = await supabase.from('requirements').insert(rows);
-    if (insErr) throw insErr;
+
+    const insRes = await fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/requirements`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(rows),
+    });
+    if (!insRes.ok) throw new Error((await insRes.text()) || insRes.statusText);
+
     await load();
     return reqs;
   }, [load]);
 
   const saveProfile = useCallback(async (profile: Profile) => {
-    const { data: existing } = await supabase.from('profiles').select('id').limit(1).maybeSingle();
-    if (existing) {
-      const { error } = await supabase.from('profiles').update({
-        name: profile.name, degree: profile.degree, year: profile.year, cgpa: profile.cgpa, skills: profile.skills,
-      }).eq('id', existing.id);
-      if (error) throw error;
+    const res = await fetch(`${API_BASE}/api/v1/profiles`);
+    const arr = await getJsonOrThrow(res);
+    const existing = Array.isArray(arr) ? arr[0] ?? null : arr ?? null;
+    if (existing && existing.id) {
+      const r = await fetch(`${API_BASE}/api/v1/profiles/${existing.id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(profile) });
+      if (!r.ok) throw new Error((await r.text()) || r.statusText);
     } else {
-      const { error } = await supabase.from('profiles').insert(profile);
-      if (error) throw error;
+      const r = await fetch(`${API_BASE}/api/v1/profiles`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(profile) });
+      if (!r.ok) throw new Error((await r.text()) || r.statusText);
     }
     await load();
   }, [load]);
 
   const uploadDocument = useCallback(async (name: string, category: string) => {
-    const { error } = await supabase.from('documents').insert({
-      opportunity_id: DEMO_OPPORTUNITY_ID,
-      name,
-      category,
-      verification_status: 'unverified',
-      extracted_text: 'Upload pending text extraction',
+    const r = await fetch(`${API_BASE}/api/v1/opportunities/${DEMO_OPPORTUNITY_ID}/documents`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+        opportunity_id: DEMO_OPPORTUNITY_ID,
+        name,
+        category,
+        verification_status: 'unverified',
+        extracted_text: 'Upload pending text extraction',
+      }),
     });
-    if (error) throw error;
+    if (!r.ok) throw new Error((await r.text()) || r.statusText);
     await load();
   }, [load]);
 
   const deleteDocument = useCallback(async (id: string) => {
-    const { error } = await supabase.from('documents').delete().eq('id', id);
-    if (error) throw error;
+    const r = await fetch(`${API_BASE}/api/v1/documents/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error((await r.text()) || r.statusText);
     await load();
   }, [load]);
 

@@ -19,16 +19,19 @@ export function ProfilePage({
   setToast,
 }: {
   profile: Profile;
-  onSave: (p: Profile) => void;
+  onSave: (p: Profile) => Promise<void>;
   setToast: (t: ToastState) => void;
 }) {
   const [draft, setDraft] = useState<Profile>(profile);
+  const [saving, setSaving] = useState(false);
   const filled = Object.values(draft).filter((v) => v.trim().length > 0).length;
   const completeness = Math.round((filled / FIELDS.length) * 100);
 
-  const save = () => {
-    onSave(draft);
-    setToast({ kind: 'success', message: 'Profile saved.' });
+  const save = async () => {
+    setSaving(true);
+    await onSave(draft);
+    setSaving(false);
+    setToast({ kind: 'success', message: 'Profile saved to database.' });
   };
 
   return (
@@ -42,7 +45,9 @@ export function ProfilePage({
               <input value={draft[key]} onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} />
             </label>
           ))}
-          <button className="btn btn-primary" onClick={save}><Save size={15} />Save profile</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>
+            <Save size={15} /> {saving ? 'Saving…' : 'Save profile'}
+          </button>
         </Card>
 
         <Card className="profile-complete-card">
@@ -53,9 +58,9 @@ export function ProfilePage({
           <div className="meter"><i style={{ width: `${completeness}%` }} /></div>
           <p className="muted">{filled} of {FIELDS.length} fields completed.</p>
           <ul className="profile-checklist">
-            <li>Verified resume on file</li>
-            <li>Identity card confirmed</li>
-            <li>Transcript pending upload</li>
+            <li>Profile data persisted to Supabase</li>
+            <li>Used for eligibility and CGPA matching</li>
+            <li>Contradictions flagged automatically</li>
           </ul>
         </Card>
       </div>

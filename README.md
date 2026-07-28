@@ -1,51 +1,45 @@
 # ApplyReady AI
 
-**From Opportunity Found → Application Ready.** ApplyReady turns long application notices into an evidence-backed action plan for students applying to hackathons, internships, and scholarships.
+**From Opportunity Found to Application Ready.** ApplyReady turns long application notices into an evidence-backed action plan for students applying to hackathons, internships, and scholarships.
 
 ## Architecture
 
-`React + Vite client → /api/v1 REST API → domain services → MongoDB (optional)`
+`React + Vite client → Supabase (PostgreSQL) for persistence → Express API for extraction`
 
-The API uses a provider boundary for opportunity extraction. `MockExtractionProvider` is deterministic and powers the demo without external credentials. `OpenAIExtractionProvider` is an extension point; no API key ever reaches the browser.
+The frontend talks directly to Supabase for all CRUD operations (profiles, opportunities, requirements, documents). The Express API handles only requirement extraction from notice text. Domain logic (readiness scoring, risk assessment, blocker detection, evidence matching, contradiction detection) runs in the browser via a shared engine module.
 
 ## Folder structure
 
 ```text
-apps/api/src     Express API, domain services, mock AI extraction, tests
-apps/web/src     Vite React UI and the interactive demo experience
+apps/api/src     Express API, domain extraction, tests
+apps/web/src     Vite React UI, domain engine, Supabase hooks
 ```
+
+## Database
+
+Supabase PostgreSQL with RLS enabled on all tables:
+- `profiles` — student profile facts
+- `opportunities` — uploaded opportunity notices
+- `requirements` — per-opportunity requirements with priority, status, confidence
+- `documents` — evidence vault items
 
 ## Milestones
 
 - [x] Domain model, readiness/risk/blocker rules, deterministic extraction
-- [x] REST endpoints and demo seed/reset API
-- [x] Responsive demo dashboard, evidence and report experiences
-- [x] Unit tests for scoring and contradiction behavior
-- [ ] Configure MongoDB Atlas and OpenAI for persistent/live production data
+- [x] Supabase persistence with RLS policies
+- [x] Full SaaS UI with dark mode, skeletons, dependency graph
+- [x] Evidence matching with confidence and source transparency
+- [x] Unit tests for scoring and risk behavior
 
 ## Setup
 
-1. Copy `apps/api/.env.example` to `apps/api/.env` and optionally set MongoDB/OpenAI values.
-2. Install dependencies: `npm install`
-3. Run: `npm run dev`
-4. Open `http://localhost:5173`.
-
-> If no environment variables are present, the app intentionally starts in local deterministic demo mode.
+1. Install dependencies: `npm install`
+2. Run: `npm run dev`
+3. Open `http://localhost:5173`
 
 ## API overview
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| GET | `/api/v1/demo` | Complete seeded opportunity/report payload |
-| POST | `/api/v1/demo/reset` | Restore original demo state |
-| POST | `/api/v1/demo/resolve` | Add transcript or endorsement and recalculate |
+| GET | `/api/v1/health` | Health check |
 | POST | `/api/v1/opportunities/extract` | Extract normalized requirements from notice text |
-| GET | `/api/v1/readiness/:opportunityId` | Get readiness report |
-
-## Demo script
-
-Open the dashboard: the student has a submitted hackathon notice, a resume and ID card, but is missing a transcript and institute endorsement. The product flags both, shows the endorsement approval chain and a CGPA discrepancy. Select **Resolve transcript** or **Start endorsement workflow** to recalculate the score.
-
-## Deployment
-
-Deploy `apps/web` to Vercel with `VITE_API_URL` pointing to the deployed API. Deploy `apps/api` to Render, set `MONGODB_URI`, `OPENAI_API_KEY`, and `CORS_ORIGIN`. MongoDB Atlas is optional for the local demo but recommended for production persistence.

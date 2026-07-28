@@ -9,6 +9,7 @@
     "test": "echo \"UI demo verified manually\""
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.9",
     "@vitejs/plugin-react": "^4.3.4",
     "lucide-react": "^1.27.0",
     "react": "^19.0.0",

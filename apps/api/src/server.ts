@@ -6,6 +6,7 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 
+
 // In-memory demo datastore that mimics the Supabase tables used by the frontend.
 const DEMO_OPPORTUNITY_ID = 'a0000000-0000-0000-0000-000000000001';
 let idSeq = 1;
@@ -69,7 +70,7 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 // helper libs for extraction
 import pdfParse from 'pdf-parse';
 import Tesseract from 'tesseract.js';
-import cheerio from 'cheerio';
+import * as cheerio from 'cheerio';
 
 async function extractTextFromFile(filePath: string, mimetype: string) {
   try {
@@ -279,7 +280,7 @@ app.post('/api/v1/opportunities/from-url', async (req, res) => {
     clearTimeout(timeout);
     if (!fetched.ok) return res.status(400).json({ error: 'fetch_failed', message: `Failed to fetch URL: ${fetched.status}` });
     const html = await fetched.text();
-    const $ = cheerio.load(html);
+   const $ = cheerio.load(html);
     // heuristic: prefer <main> or <article>, otherwise take largest <p> clusters
     let content = '';
     if ($('main').length) content = $('main').text();

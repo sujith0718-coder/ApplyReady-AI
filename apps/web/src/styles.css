@@ -382,7 +382,7 @@ main { min-width: 0; }
 .opportunity-card:hover { transform: translateY(-6px); box-shadow: var(--shadow-lg); }
 .opportunity-card.active { border-color: var(--primary-600); box-shadow: 0 8px 24px rgba(20,83,45,0.12); transform: translateY(-6px) scale(1.01); }
 .opportunity-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.op-title { margin: 0 0 6px 0; font-size: 15px; }
+.op-title { margin: 0 0 6px 0; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: calc(100% - 96px); }
 .op-org { font-size: 12px; }
 .op-right { display: flex; align-items: center; gap: 8px; }
 .op-readiness { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 700; padding: 6px 10px; border-radius: 8px; color: #fff; }
@@ -488,6 +488,9 @@ main { min-width: 0; }
 .review-card p { font-size: 13px; color: var(--text-muted); }
 
 /* ============ Profile ============ */
+.avatar-large { width: 112px; height: 112px; border-radius: 12px; object-fit: cover; overflow: hidden; display: block; }
+.profile-avatar-field img { border-radius: 12px; }
+
 .profile-layout { display: grid; grid-template-columns: 1.4fr 0.9fr; gap: 16px; }
 .profile-form-card { display: flex; flex-direction: column; gap: 16px; }
 .profile-form-card .btn { align-self: flex-start; margin-top: 4px; }

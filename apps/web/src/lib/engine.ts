@@ -193,3 +193,23 @@ export function normalizeNotice(text: string): Requirement[] {
 export function daysUntilDeadline(deadline: string): number {
   return Math.ceil((new Date(deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 }
+
+// Conservative display title generator: pick a short informative first line, otherwise fallback to Untitled Opportunity
+export function generateTitleFromText(text: string): string {
+  if (!text) return 'Untitled Opportunity';
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  for (const line of lines.slice(0, 6)) {
+    if (line.length < 6) continue;
+    if (/^applications?/i.test(line)) continue;
+    const wordCount = line.split(/\s+/).length;
+    // prefer short lines (3-10 words) which likely are titles
+    if (wordCount >= 2 && wordCount <= 10) {
+      // require at least one capitalized word (conservative)
+      if (/[A-Z][a-z]{2,}/.test(line) || /\b[A-Z]{2,}\b/.test(line)) return line.slice(0, 120);
+    }
+  }
+  // fallback: take first non-generic snippet of up to 6 words
+  const first = (lines[0] || '').split(/\s+/).slice(0, 6).join(' ');
+  if (first && first.length >= 3) return first.slice(0, 80);
+  return 'Untitled Opportunity';
+}

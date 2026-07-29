@@ -280,7 +280,14 @@ app.post('/api/v1/opportunities/from-url', async (req, res) => {
     clearTimeout(timeout);
     if (!fetched.ok) return res.status(400).json({ error: 'fetch_failed', message: `Failed to fetch URL: ${fetched.status}` });
     const html = await fetched.text();
-    const $ = cheerio.load(html);
+   const $ = cheerio.load(html);
+   const titleCandidates: string[] = [
+  $('title').first().text().trim(),
+  $('meta[name="description"]').attr('content')?.trim() ?? '',
+  $('h1').first().text().trim(),
+  $('h2').first().text().trim(),
+  $('h3').first().text().trim(),
+].filter(Boolean);
     // heuristic: prefer <main> or <article>, otherwise take largest <p> clusters
     let content = '';
     if ($('main').length) content = $('main').text();

@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { z } from 'zod';
-import { normalizeNotice } from './domain.js';
+import { normalizeNotice, detectDeadline } from './domain.js';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
@@ -228,6 +228,97 @@ app.post('/api/v1/opportunities', async (req, res) => {
     requirements.push({ id: genId(), opportunity_id: id, req_key: r.id, title: r.title, description: r.description, type: r.type, priority: r.priority, status: r.status, source_text: r.sourceText, confidence: r.confidence, dependencies: r.dependencies, created_at: new Date(Date.now() - i * 1000).toISOString() });
   });
   res.status(201).json(opp);
+});
+
+// Create opportunity from uploaded file (PDF / Image) — extracts text, then creates opportunity and requirements
+app.post('/api/v1/opportunities/from-file', upload.single('file'), async (req, res) => {
+  const anyReq: any = req as any;
+  if (!anyReq.file) return res.status(400).json({ error: 'no_file', message: 'Please attach a file.' });
+  const file = anyReq.file as any;
+  // Extract text from file
+  const fp = path.join(process.cwd(), 'apps', 'api', 'uploads', file.filename);
+  const extracted = await extractTextFromFile(fp, file.mimetype).catch(() => ({ text: '', confidence: 0 }));
+  const text = extracted.text || '';
+  const titleFromFile = anyReq.body.title || (text.split('\n').find((l:any)=>l.trim().length>3)?.trim() || path.basename(file.originalname, path.extname(file.originalname)));
+  const title = (titleFromFile && titleFromFile.length<=120 && !/applications?/i.test(titleFromFile)) ? String(titleFromFile).slice(0,120) : 'Untitled Opportunity';
+  const deadline = detectDeadline(text);
+
+  const payload = { title, deadline, notice_text: text };
+
+  if (_dbReady) {
+    const created = await models.OpportunityModel.create({ id: anyReq.body.id || genId(), ...payload });
+    const reqs = normalizeNotice(text);
+    const rows = reqs.map((r: any) => ({ opportunity_id: created.id, req_key: r.id, title: r.title, description: r.description, type: r.type, priority: r.priority, status: r.status, source_text: r.sourceText, confidence: r.confidence, dependencies: r.dependencies }));
+    if (rows.length) await models.RequirementModel.insertMany(rows).catch(() => {});
+    // also persist the uploaded document record
+    await models.DocumentModel.create({ opportunity_id: created.id, name: file.originalname, category: anyReq.body.category || 'Uploaded document', verification_status: 'unverified', extracted_text: text || '', extracted_confidence: extracted.confidence || 0, mime_type: file.mimetype, size: file.size, path: path.join('apps','api','uploads', file.filename), uploaded_at: new Date().toISOString() });
+    return res.status(201).json(created.toObject());
+  }
+
+  // demo fallback
+  const id = genId();
+  const opp = { id, title, deadline, notice_text: text, created_at: new Date().toISOString() };
+  opportunities.push(opp);
+  const reqs = normalizeNotice(text);
+  reqs.forEach((r:any,i:number)=>{
+    requirements.push({ id: genId(), opportunity_id: id, req_key: r.id, title: r.title, description: r.description, type: r.type, priority: r.priority, status: r.status, source_text: r.sourceText, confidence: r.confidence, dependencies: r.dependencies, created_at: new Date(Date.now()-i*1000).toISOString() });
+  });
+  // persist document record in demo
+  documents.push({ id: genId(), opportunity_id: id, name: file.originalname, category: anyReq.body.category || 'Uploaded document', verification_status: 'unverified', extracted_text: text || '', extracted_confidence: extracted.confidence || 0, mime_type: file.mimetype, size: file.size, path: path.join('apps','api','uploads', file.filename), uploaded_at: new Date().toISOString() });
+  res.status(201).json(opp);
+});
+
+// Create opportunity from URL
+app.post('/api/v1/opportunities/from-url', async (req, res) => {
+  const body = req.body;
+  if (!body || typeof body.url !== 'string' || !body.url) return res.status(400).json({ error: 'invalid', message: 'Please provide url' });
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const fetched = await fetch(body.url, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!fetched.ok) return res.status(400).json({ error: 'fetch_failed', message: `Failed to fetch URL: ${fetched.status}` });
+    const html = await fetched.text();
+    const $ = cheerio.load(html);
+    // heuristic: prefer <main> or <article>, otherwise take largest <p> clusters
+    let content = '';
+    if ($('main').length) content = $('main').text();
+    else if ($('article').length) content = $('article').text();
+    else {
+      // collect paragraphs and choose the largest continuous block
+      const ps = $('p').map((i:any, el:any) => $(el).text().trim()).get().filter(Boolean);
+      // join top paragraphs until length > 300
+      let acc = '';
+      for (const p of ps) {
+        acc += p + '\n\n';
+        if (acc.length > 300) break;
+      }
+      content = acc;
+    }
+    const text = (content || '').trim();
+    if (!text || text.length < 30) return res.status(400).json({ error: 'no_text', message: 'No readable text detected on the page.' });
+    const titleFromPage = body.title || $("title").first().text() || text.split('\n').find((l:any)=>l.trim().length>3)?.trim();
+    const title = (titleFromPage && titleFromPage.length<=120 && !/applications?/i.test(titleFromPage)) ? String(titleFromPage).slice(0,120) : 'Untitled Opportunity';
+    const deadline = detectDeadline(text);
+    const payload = { title, deadline, notice_text: text };
+    if (_dbReady) {
+      const created = await models.OpportunityModel.create({ id: body.id || genId(), ...payload });
+      const reqs = normalizeNotice(text);
+      const rows = reqs.map((r:any) => ({ opportunity_id: created.id, req_key: r.id, title: r.title, description: r.description, type: r.type, priority: r.priority, status: r.status, source_text: r.sourceText, confidence: r.confidence, dependencies: r.dependencies }));
+      if (rows.length) await models.RequirementModel.insertMany(rows).catch(() => {});
+      return res.status(201).json(created.toObject());
+    }
+    const id = genId();
+    const opp = { id, title, deadline, notice_text: text, created_at: new Date().toISOString() };
+    opportunities.push(opp);
+    const reqs = normalizeNotice(text);
+    reqs.forEach((r:any,i:number)=>{
+      requirements.push({ id: genId(), opportunity_id: id, req_key: r.id, title: r.title, description: r.description, type: r.type, priority: r.priority, status: r.status, source_text: r.sourceText, confidence: r.confidence, dependencies: r.dependencies, created_at: new Date(Date.now()-i*1000).toISOString() });
+    });
+    res.status(201).json(opp);
+  } catch (e:any) {
+    return res.status(400).json({ error: 'fetch_error', message: e?.message || 'Failed to fetch URL' });
+  }
 });
 
 // Requirements for an opportunity

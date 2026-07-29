@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import type { Profile, Requirement, Document } from '../types';
-import { buildReport, normalizeNotice } from './engine';
+import { buildReport, normalizeNotice, generateTitleFromText } from './engine';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
 
@@ -112,8 +112,8 @@ export function useAppData() {
   }, [load]);
 
   const createOpportunityFromText = useCallback(async (text: string, opts?: { title?: string; deadline?: string }) => {
-    const title = opts?.title || (text || '').slice(0, 80);
-    const deadline = opts?.deadline || null;
+    const title = opts?.title || generateTitleFromText(text || '');
+        const deadline = opts?.deadline || null;
     const res = await fetch(`${API_BASE}/api/v1/opportunities`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title, deadline, notice_text: text }) });
     if (!res.ok) throw new Error((await res.text()) || res.statusText);
     const created = await res.json();

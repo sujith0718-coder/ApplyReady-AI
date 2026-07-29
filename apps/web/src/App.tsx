@@ -42,6 +42,8 @@ export function App() {
     }
   };
 
+  const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
+
   const handleExtract = async (text: string) => {
     try {
       // Create a new opportunity from the pasted text and navigate to requirements
@@ -53,6 +55,31 @@ export function App() {
       setToast({ kind: 'error', message: e instanceof Error ? e.message : 'Extraction failed.' });
       return false;
     }
+  };
+
+  const createFromFile = async (file: File, category?: string) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    if (category) fd.append('category', category);
+    const res = await fetch(`${API_BASE}/api/v1/opportunities/from-file`, { method: 'POST', body: fd });
+    if (!res.ok) throw new Error((await res.text()) || res.statusText);
+    const created = await res.json();
+    await load();
+    await setActiveOpportunity(created.id);
+    setPage('requirements');
+    setToast({ kind: 'success', message: 'Opportunity created from file and requirements extracted.' });
+    return created;
+  };
+
+  const createFromUrl = async (url: string) => {
+    const res = await fetch(`${API_BASE}/api/v1/opportunities/from-url`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url }) });
+    if (!res.ok) throw new Error((await res.text()) || res.statusText);
+    const created = await res.json();
+    await load();
+    await setActiveOpportunity(created.id);
+    setPage('requirements');
+    setToast({ kind: 'success', message: 'Opportunity created from URL and requirements extracted.' });
+    return created;
   };
 
   const handleReset = async () => {
@@ -134,7 +161,7 @@ export function App() {
         <div className="main-inner">
           {toast && <Toast toast={toast} onClose={() => setToast(null)} />}
           {page === 'dashboard' && <Dashboard report={report} profile={profile} opportunityTitle={title} deadline={deadline} onResolve={handleResolve} onNavigate={navigate} opportunities={state.opportunities} onSelectOpportunity={async (id:string) => { await setActiveOpportunity(id); }} activeId={state.opportunity?.id} />}
-          {page === 'upload' && <Upload onExtract={handleExtract} setToast={setToast} onNavigate={navigate} />}
+          {page === 'upload' && <Upload onExtract={handleExtract} setToast={setToast} onNavigate={navigate} createFromFile={createFromFile} createFromUrl={createFromUrl} /> }
           {page === 'requirements' && <Requirements report={report} onResolve={handleResolve} />}
           {page === 'vault' && <Vault report={report} onUpload={handleUpload} onDeleteDoc={handleDeleteDoc} onResolve={handleResolve} />}
           {page === 'readiness' && <Readiness report={report} onResolve={handleResolve} setToast={setToast} />}

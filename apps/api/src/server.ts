@@ -280,25 +280,57 @@ app.post('/api/v1/opportunities/from-url', async (req, res) => {
     if (!fetched.ok) return res.status(400).json({ error: 'fetch_failed', message: `Failed to fetch URL: ${fetched.status}` });
     const html = await fetched.text();
     const $ = cheerio.load(html);
-    // heuristic: prefer <main> or <article>, otherwise take largest <p> clusters
+    // Extract title candidates in order of preference: <title>, meta description, <h1>/<h2>/<h3>, <main>/<article>, meaningful paragraph cluster
+    const titleCandidates: string[] = [];
+    const pageTitle = $("title").first().text().trim();
+    if (pageTitle) titleCandidates.push(pageTitle);
+    const metaDesc = $("meta[name=description]").attr('content') || $("meta[property\='og:description']").attr('content');
+    if (metaDesc) titleCandidates.push(String(metaDesc).trim());
+    // headings
+    const h1 = $('h1').first().text().trim(); if (h1) titleCandidates.push(h1);
+    const h2 = $('h2').first().text().trim(); if (h2) titleCandidates.push(h2);
+    const h3 = $('h3').first().text().trim(); if (h3) titleCandidates.push(h3);
+
     let content = '';
     if ($('main').length) content = $('main').text();
     else if ($('article').length) content = $('article').text();
     else {
       // collect paragraphs and choose the largest continuous block
       const ps = $('p').map((i:any, el:any) => $(el).text().trim()).get().filter(Boolean);
-      // join top paragraphs until length > 300
       let acc = '';
       for (const p of ps) {
+        // skip tiny paragraphs that are likely navigation
+        if (p.length < 40) continue;
         acc += p + '\n\n';
         if (acc.length > 300) break;
       }
       content = acc;
     }
-    const text = (content || '').trim();
+
+    // append a content-based candidate (first heading-like paragraph)
+    const contentText = (content || '').trim();
+    if (contentText) titleCandidates.push(contentText.split('\n').find((l:any)=>l.trim().length>3)?.trim() || '');
+
+    // choose first meaningful candidate conservatively
+    const chooseTitle = (s?: string) => {
+      if (!s) return null;
+      const cleaned = String(s).replace(/\s+/g, ' ').trim();
+      if (cleaned.length < 4) return null;
+      const words = cleaned.split(/\s+/).length;
+      if (words >= 2 && words <= 8 && cleaned.length >= 6) return cleaned.slice(0, 120);
+      if (/\d{4}/.test(cleaned) && cleaned.length >= 6) return cleaned.slice(0,120);
+      return null;
+    };
+
+    let titleFromPage: string | null = null;
+    for (const c of titleCandidates) {
+      const t = chooseTitle(c);
+      if (t) { titleFromPage = t; break; }
+    }
+
+    const text = contentText;
     if (!text || text.length < 30) return res.status(400).json({ error: 'no_text', message: 'No readable text detected on the page.' });
-    const titleFromPage = body.title || $("title").first().text() || text.split('\n').find((l:any)=>l.trim().length>3)?.trim();
-    const title = (titleFromPage && titleFromPage.length<=120 && !/applications?/i.test(titleFromPage)) ? String(titleFromPage).slice(0,120) : 'Untitled Opportunity';
+    const title = titleFromPage || 'Untitled Opportunity';
     const deadline = detectDeadline(text);
     const payload = { title, deadline, notice_text: text };
     if (_dbReady) {

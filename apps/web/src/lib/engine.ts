@@ -198,18 +198,33 @@ export function daysUntilDeadline(deadline: string): number {
 export function generateTitleFromText(text: string): string {
   if (!text) return 'Untitled Opportunity';
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  for (const line of lines.slice(0, 6)) {
-    if (line.length < 6) continue;
+
+  const isMeaningful = (s: string) => {
+    if (!s) return false;
+    const trimmed = s.replace(/[^\w\s\-:\.]/g, '').trim();
+    if (trimmed.length < 4) return false;
+    const words = trimmed.split(/\s+/).filter(Boolean);
+    if (words.length >= 2 && words.length <= 8 && trimmed.length >= 6) return true;
+    // allow short acronyms with year like "YASSC 2026" or two-word acronym forms
+    if (/^[A-Z0-9\-\s]{2,30}$/.test(trimmed) && /\d{4}/.test(trimmed)) return true;
+    // otherwise reject
+    return false;
+  };
+
+  for (const line of lines.slice(0, 8)) {
+    if (!line) continue;
     if (/^applications?/i.test(line)) continue;
-    const wordCount = line.split(/\s+/).length;
-    // prefer short lines (3-10 words) which likely are titles
-    if (wordCount >= 2 && wordCount <= 10) {
-      // require at least one capitalized word (conservative)
-      if (/[A-Z][a-z]{2,}/.test(line) || /\b[A-Z]{2,}\b/.test(line)) return line.slice(0, 120);
-    }
+    if (/^(apply|applications|eligibility|deadline)/i.test(line)) continue;
+    if (isMeaningful(line)) return line.slice(0, 120);
+    // accept lines that contain a capitalized phrase of 2-6 words
+    const wc = line.split(/\s+/).length;
+    if (wc >= 2 && wc <= 6 && /[A-Z][a-z]{2,}/.test(line)) return line.slice(0, 120);
   }
-  // fallback: take first non-generic snippet of up to 6 words
-  const first = (lines[0] || '').split(/\s+/).slice(0, 6).join(' ');
-  if (first && first.length >= 3) return first.slice(0, 80);
+
+  // fallback: compose a short snippet from the first sentence of the notice
+  const firstSentence = (text.match(/[^.!?]+[.!?]?/) || [])[0] || '';
+  const snippet = firstSentence.split(/\s+/).slice(0, 6).join(' ');
+  if (isMeaningful(snippet)) return snippet.slice(0, 80);
+
   return 'Untitled Opportunity';
 }

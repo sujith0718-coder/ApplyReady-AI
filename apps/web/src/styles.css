@@ -139,6 +139,9 @@ main { min-width: 0; }
 .main-inner { max-width: 1240px; margin: 0 auto; padding: 42px 56px 80px; position: relative; }
 
 /* ============ Page header ============ */
+/* Dark mode heading contrast tweaks: small, targeted increase for readability */
+.dark .page-header-text h2, .dark .settings-head h2, .dark .page-header h1 { color: var(--text); }
+
 .page-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; margin-bottom: 30px; }
 .page-header-text { min-width: 0; }
 .eyebrow { font-size: 10.5px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--text-subtle); margin: 0 0 8px; font-family: 'Inter', sans-serif; }
@@ -382,7 +385,7 @@ main { min-width: 0; }
 .opportunity-card:hover { transform: translateY(-6px); box-shadow: var(--shadow-lg); }
 .opportunity-card.active { border-color: var(--primary-600); box-shadow: 0 8px 24px rgba(20,83,45,0.12); transform: translateY(-6px) scale(1.01); }
 .opportunity-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.op-title { margin: 0 0 6px 0; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: calc(100% - 96px); }
+.op-title { margin: 0 0 6px 0; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: calc(100% - 120px); }
 .op-org { font-size: 12px; }
 .op-right { display: flex; align-items: center; gap: 8px; }
 .op-readiness { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 700; padding: 6px 10px; border-radius: 8px; color: #fff; }

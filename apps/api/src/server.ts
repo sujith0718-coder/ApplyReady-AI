@@ -39,9 +39,11 @@ let requirements: any[] = normalizeNotice(opportunities[0].notice_text).map((r, 
 let documents: any[] = []; 
 
 // Prepare uploads directory and multer
-const UPLOAD_DIR = path.join(process.cwd(), 'apps', 'api', 'uploads');
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+const UPLOAD_DIR = process.env.VERCEL
+  ? path.join('/tmp', 'applyready-uploads')
+  : path.join(process.cwd(), 'apps', 'api', 'uploads');
 
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const storage = multer.diskStorage({
   destination: (_req: any, _file: any, cb: any) => cb(null, UPLOAD_DIR),
   filename: (_req: any, file: any, cb: any) => {

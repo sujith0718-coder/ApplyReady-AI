@@ -5,7 +5,7 @@ import { normalizeNotice, detectDeadline } from './domain.js';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
-import * as cheerio from 'cheerio';
+import { load } from 'cheerio/slim';
 
 
 // In-memory demo datastore that mimics the Supabase tables used by the frontend.
@@ -282,8 +282,7 @@ app.post('/api/v1/opportunities/from-url', async (req, res) => {
     clearTimeout(timeout);
     if (!fetched.ok) return res.status(400).json({ error: 'fetch_failed', message: `Failed to fetch URL: ${fetched.status}` });
    const html = await fetched.text();
-
-const $ = cheerio.load(html);
+const $ = load(html);
     const titleCandidates: string[] = [
   $('title').first().text().trim(),
   $('meta[name="description"]').attr('content')?.trim() ?? '',

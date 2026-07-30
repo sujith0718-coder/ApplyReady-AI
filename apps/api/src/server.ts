@@ -64,7 +64,9 @@ const upload = multer({
 });
 
 const app = express();
-app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173' }));
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || 'https://apply-ready-ai-web.vercel.app',
+}));
 app.use(express.json({ limit: '1mb' }));
 
 // Serve uploaded files for preview (secure enough for demo)

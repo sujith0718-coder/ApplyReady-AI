@@ -554,5 +554,4 @@ app.use((_, res) => {
   res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
 });
 
-const port = Number(process.env.PORT) || 4000;
-app.listen(port, () => console.log(`ApplyReady API listening on :${port}`));
+export default app;

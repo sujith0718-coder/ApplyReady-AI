@@ -70,7 +70,9 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 // helper libs for extraction
 import pdfParse from 'pdf-parse';
 import Tesseract from 'tesseract.js';
-import * as cheerio from 'cheerio';
+import { load } from 'cheerio';
+
+
 
 async function extractTextFromFile(filePath: string, mimetype: string) {
   try {
@@ -280,8 +282,8 @@ app.post('/api/v1/opportunities/from-url', async (req, res) => {
     clearTimeout(timeout);
     if (!fetched.ok) return res.status(400).json({ error: 'fetch_failed', message: `Failed to fetch URL: ${fetched.status}` });
     const html = await fetched.text();
-   const $ = cheerio.load(html);
-   const titleCandidates: string[] = [
+    const $ = load(html);
+    const titleCandidates: string[] = [
   $('title').first().text().trim(),
   $('meta[name="description"]').attr('content')?.trim() ?? '',
   $('h1').first().text().trim(),
